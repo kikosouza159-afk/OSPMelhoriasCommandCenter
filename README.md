@@ -142,3 +142,22 @@ Ajuste na esteira de demandas:
 - Removida a coluna ASR da tabela principal.
 - O campo PreviousAsrTranscription permanece no cadastro/edição para consulta e registro.
 - Redistribuição das colunas para melhorar a visualização da frase atual, sugestão e observações.
+
+
+## Atualização V1.5.4
+
+Correção para deploy no Render:
+- Incluído `gunicorn==22.0.0` no `requirements.txt`.
+- Incluído `Procfile` com `web: gunicorn app:app`.
+
+Configuração recomendada no Render:
+
+Build Command:
+```bash
+pip install -r requirements.txt
+```
+
+Start Command:
+```bash
+gunicorn app:app
+```

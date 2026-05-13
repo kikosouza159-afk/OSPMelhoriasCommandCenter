@@ -12,12 +12,6 @@ app.secret_key = "olos-fraseologia-cockpit-v1-2"
 
 LOGIN_USER = "admin"
 LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "Nubia"
-LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "Elvis"
-LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "Michele"
-LOGIN_PASSWORD = "olos123"
 
 def login_required(fn):
     @wraps(fn)
