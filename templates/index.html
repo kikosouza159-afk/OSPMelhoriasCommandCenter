@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cockpit de Demandas | Fraseologia Bot</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="tech-lines"></div>
+  <div class="energy-rain">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="orb orb-c"></div>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">SKY · Negocie Online · Gestão de Melhorias</p>
+        <h1>Cockpit de Fraseologia & Fluxo</h1>
+        <p class="subtitle">Controle das solicitações ao desenvolvimento com score de prioridade, status, responsáveis e visão executiva das melhorias.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="ghost link-button" href="/logout">Sair</a>
+        <button class="primary" onclick="abrirModal()">+ Nova demanda</button>
+      </div>
+    </section>
+
+    <section class="cards">
+      <article class="card"><span>Total</span><strong id="kpiTotal">0</strong><small>Demandas mapeadas</small></article>
+      <article class="card"><span>Altíssimo</span><strong id="kpiAltissimo">0</strong><small>Maior peso operacional</small></article>
+      <article class="card"><span>Backlog</span><strong id="kpiBacklog">0</strong><small>Aguardando atuação</small></article>
+      <article class="card"><span>Concluídas</span><strong id="kpiConcluidas">0</strong><small>Implementadas ou homologadas</small></article>
+      <article class="card"><span>Score médio</span><strong id="kpiScore">0</strong><small>Prioridade ponderada</small></article>
+    </section>
+
+    <section class="filters panel">
+      <div>
+        <label>Status</label>
+        <select id="fStatus" onchange="carregarTudo()">
+          <option value="">Todos</option>
+          {% for s in status_list %}<option value="{{s}}">{{s}}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Tipo</label>
+        <select id="fTipo" onchange="carregarTudo()">
+          <option value="">Todos</option>
+          {% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="grow">
+        <label>Busca</label>
+        <input id="fBusca" placeholder="Buscar por CallId, frase, sugestão ou observação..." oninput="debouncedLoad()" />
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <article class="panel chart-panel">
+        <h2>Demandas por status</h2>
+        <canvas id="chartStatus"></canvas>
+      </article>
+      <article class="panel chart-panel">
+        <h2>Demandas por tipo</h2>
+        <canvas id="chartTipo"></canvas>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Esteira de demandas</h2>
+          <p>Arraste as linhas para alterar a ordem de prioridade. O Id Prioridade também pode ser editado no cadastro. ⚡</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Arrastar</th>
+              <th>Id Prioridade</th>
+              <th>Classificação</th>
+              <th>Status</th>
+              <th>Tipo</th>
+              <th>CallId</th>
+              <th>Frase atual</th>
+              <th>Sugestão</th>
+              <th>Obs</th>
+              <th>Resp.</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="modal">
+    <form method="dialog" class="modal-card" onsubmit="salvarDemanda(event)">
+      <div class="modal-head">
+        <h2 id="modalTitle">Nova demanda</h2>
+        <button type="button" class="ghost" onclick="fecharModal()">×</button>
+      </div>
+
+      <input type="hidden" id="id" />
+
+      <div class="form-grid">
+        <div><label>CallIdtelecom</label><input id="call_id" /></div>
+        <div><label>PreviousAsrTranscription</label><input id="previous_asr" /></div>
+        <div><label>Tipo</label><select id="tipo">{% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}</select></div>
+        <div><label>Status</label><select id="status">{% for s in status_list %}<option value="{{s}}">{{s}}</option>{% endfor %}</select></div>
+        <div><label>Id Prioridade</label><input id="prioridade_ordem" type="number" min="1" placeholder="Ex: 1" /></div>
+        <div><label>Responsável</label><input id="responsavel" placeholder="Dev, squad ou pessoa" /></div>
+        <div><label>Data prevista</label><input id="data_prevista" type="date" /></div>
+      </div>
+
+      <label>Frase atual do bot</label>
+      <textarea id="frase_atual" rows="3"></textarea>
+
+      <label>Sugestão de fraseologia / ajuste</label>
+      <textarea id="sugestao" rows="3"></textarea>
+
+      <label>Observação / justificativa</label>
+      <textarea id="obs" rows="2"></textarea>
+
+      <div class="score-grid">
+        <div><label>Impacto</label><input id="impacto" type="number" min="1" max="5" value="3" /></div>
+        <div><label>Recorrência</label><input id="recorrencia" type="number" min="1" max="5" value="3" /></div>
+        <div><label>Urgência</label><input id="urgencia" type="number" min="1" max="5" value="3" /></div>
+        <div><label>Esforço</label><input id="esforco" type="number" min="1" max="5" value="2" /></div>
+        <div><label>Risco</label><input id="risco" type="number" min="1" max="5" value="3" /></div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="fecharModal()">Cancelar</button>
+        <button class="primary" type="submit">Salvar demanda</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
