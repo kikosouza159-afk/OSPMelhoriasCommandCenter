@@ -197,3 +197,29 @@ Ajustes aplicados:
   - Observação
 - Incluído campo `melhoria` no banco SQLite.
 - A esteira passa a exibir `Sugestão / Melhoria` e `Obs`.
+
+
+## Atualização V1.5.5 - Múltiplos logins
+
+Correção aplicada:
+- O login agora usa um dicionário `USERS`.
+- Isso permite cadastrar vários usuários com suas respectivas senhas.
+
+Exemplo:
+
+```python
+USERS = {
+    "admin": "olos123",
+    "elvis": "olos123",
+    "michele": "olos123",
+    "nubia": "olos123"
+}
+```
+
+Validação usada:
+
+```python
+if usuario in USERS and USERS[usuario] == senha:
+    session["logged_in"] = True
+    session["usuario"] = usuario
+```

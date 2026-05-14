@@ -195,7 +195,7 @@ def login():
         usuario = request.form.get("usuario", "").strip()
         senha = request.form.get("senha", "").strip()
 
-        if usuario == LOGIN_USER and senha == LOGIN_PASSWORD:
+        if usuario in USERS and USERS[usuario] == senha:
             session["logged_in"] = True
             session["usuario"] = usuario
             return redirect(url_for("index"))
