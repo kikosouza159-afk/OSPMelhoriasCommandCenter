@@ -16,6 +16,8 @@ LOGIN_USER = "elvis"
 LOGIN_PASSWORD = "olos123"
 LOGIN_USER = "michele"
 LOGIN_PASSWORD = "olos123"
+LOGIN_USER = "nubia"
+LOGIN_PASSWORD = "olos123"
 
 def login_required(fn):
     @wraps(fn)
