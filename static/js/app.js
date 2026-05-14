@@ -59,8 +59,9 @@ function renderTabela() {
       <td>${escapeHtml(d.tipo)}</td>
       <td>${escapeHtml(d.call_id)}</td>
       <td><div class="truncate">${escapeHtml(d.frase_atual)}</div></td>
-      <td><div class="truncate">${escapeHtml(d.sugestao)}</div></td>
+      <td><div class="truncate">${escapeHtml(d.tipo === "Fraseologia" ? d.sugestao : (d.melhoria || d.sugestao || ""))}</div></td>
       <td><div class="truncate">${escapeHtml(d.obs || "")}</div></td>
+      <td>${escapeHtml(d.criado_por || "")}</td>
       <td>${escapeHtml(d.responsavel || "")}</td>
       <td>
         <div class="actions">
@@ -188,9 +189,11 @@ function fecharModal() {
 }
 
 function limparForm() {
-  ["id","call_id","previous_asr","frase_atual","sugestao","obs","responsavel","data_prevista","prioridade_ordem"].forEach(id => $(id).value = "");
+  ["id","call_id","previous_asr","frase_atual","sugestao","melhoria","obs","responsavel","data_prevista","prioridade_ordem"].forEach(id => $(id).value = "");
   $("tipo").value = "Fraseologia";
   $("status").value = "Backlog";
+  $("nivel_prioridade").value = "Médio";
+  toggleFraseologiaFields();
   $("impacto").value = 3;
   $("recorrencia").value = 3;
   $("urgencia").value = 3;
@@ -207,6 +210,8 @@ function editar(id) {
     if ($(k)) $(k).value = d[k] ?? "";
   });
   $("id").value = d.id;
+  if ($("criado_por_view")) $("criado_por_view").value = d.criado_por || "";
+  toggleFraseologiaFields();
   $("modal").showModal();
 }
 
@@ -219,9 +224,11 @@ async function salvarDemanda(event) {
     previous_asr: $("previous_asr").value,
     frase_atual: $("frase_atual").value,
     sugestao: $("sugestao").value,
+    melhoria: $("melhoria").value,
     obs: $("obs").value,
     tipo: $("tipo").value,
     status: $("status").value,
+    nivel_prioridade: $("nivel_prioridade").value,
     responsavel: $("responsavel").value,
     data_prevista: $("data_prevista").value,
     prioridade_ordem: Number($("prioridade_ordem").value || 999999),
@@ -242,13 +249,39 @@ async function salvarDemanda(event) {
   });
 
   fecharModal();
-  carregarTudo();
+  
+function toggleFraseologiaFields() {
+  const fraseologiaBox = $("fraseologiaBox");
+  const melhoriaBox = $("melhoriaBox");
+  if (!fraseologiaBox || !melhoriaBox) return;
+
+  const tipo = $("tipo").value;
+  const isFraseologia = tipo === "Fraseologia";
+
+  fraseologiaBox.style.display = isFraseologia ? "block" : "none";
+  melhoriaBox.style.display = isFraseologia ? "none" : "block";
+}
+
+carregarTudo();
 }
 
 async function excluir(id) {
   if (!confirm("Deseja excluir esta demanda?")) return;
   await fetch(`/api/demandas/${id}`, { method: "DELETE" });
-  carregarTudo();
+  
+function toggleFraseologiaFields() {
+  const fraseologiaBox = $("fraseologiaBox");
+  const melhoriaBox = $("melhoriaBox");
+  if (!fraseologiaBox || !melhoriaBox) return;
+
+  const tipo = $("tipo").value;
+  const isFraseologia = tipo === "Fraseologia";
+
+  fraseologiaBox.style.display = isFraseologia ? "block" : "none";
+  melhoriaBox.style.display = isFraseologia ? "none" : "block";
+}
+
+carregarTudo();
 }
 
 function escapeHtml(value) {
@@ -258,6 +291,19 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+
+function toggleFraseologiaFields() {
+  const fraseologiaBox = $("fraseologiaBox");
+  const melhoriaBox = $("melhoriaBox");
+  if (!fraseologiaBox || !melhoriaBox) return;
+
+  const tipo = $("tipo").value;
+  const isFraseologia = tipo === "Fraseologia";
+
+  fraseologiaBox.style.display = isFraseologia ? "block" : "none";
+  melhoriaBox.style.display = isFraseologia ? "none" : "block";
 }
 
 carregarTudo();

@@ -920,3 +920,65 @@ th:nth-child(11), td:nth-child(11) {
     min-width: 140px;
   }
 }
+
+
+/* V1.5.3 Cadastro objetivo */
+.form-grid-objetivo {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.conditional-box {
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid rgba(0, 157, 255, .18);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, .10);
+}
+
+/* Nova esteira com 11 colunas, sem Obs */
+th:nth-child(1), td:nth-child(1) { width: 4%; }      /* Arrastar */
+th:nth-child(2), td:nth-child(2) { width: 5%; }      /* Id Prioridade */
+th:nth-child(3), td:nth-child(3) { width: 7%; }      /* Classificação */
+th:nth-child(4), td:nth-child(4) { width: 7%; }      /* Status */
+th:nth-child(5), td:nth-child(5) { width: 7.5%; }    /* Tipo */
+th:nth-child(6), td:nth-child(6) { width: 8%; }      /* CallId */
+th:nth-child(7), td:nth-child(7) { width: 18%; }     /* Frase atual */
+th:nth-child(8), td:nth-child(8) { width: 18%; }     /* Sugestão */
+th:nth-child(9), td:nth-child(9) { width: 7%; }      /* Inserido por */
+th:nth-child(10), td:nth-child(10) { width: 6.5%; }  /* Resp. */
+th:nth-child(11), td:nth-child(11) { width: 12%; }   /* Ações */
+
+th:nth-child(11), td:nth-child(11) {
+  min-width: 150px;
+}
+
+@media (max-width: 1100px) {
+  .form-grid-objetivo {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* V1.5.4 - Campo Melhoria e Observação para demandas que não são Fraseologia */
+#melhoriaBox textarea,
+#fraseologiaBox textarea {
+  min-height: 92px;
+}
+
+/* Esteira com Obs novamente */
+th:nth-child(1), td:nth-child(1) { width: 4%; }      /* Arrastar */
+th:nth-child(2), td:nth-child(2) { width: 5%; }      /* Id Prioridade */
+th:nth-child(3), td:nth-child(3) { width: 7%; }      /* Classificação */
+th:nth-child(4), td:nth-child(4) { width: 7%; }      /* Status */
+th:nth-child(5), td:nth-child(5) { width: 7%; }      /* Tipo */
+th:nth-child(6), td:nth-child(6) { width: 8%; }      /* CallId */
+th:nth-child(7), td:nth-child(7) { width: 15.5%; }   /* Frase atual */
+th:nth-child(8), td:nth-child(8) { width: 16%; }     /* Sugestão / Melhoria */
+th:nth-child(9), td:nth-child(9) { width: 12%; }     /* Obs */
+th:nth-child(10), td:nth-child(10) { width: 6.5%; }  /* Inserido por */
+th:nth-child(11), td:nth-child(11) { width: 5%; }    /* Resp. */
+th:nth-child(12), td:nth-child(12) { width: 7%; }    /* Ações */
+
+th:nth-child(12), td:nth-child(12) {
+  min-width: 150px;
+}

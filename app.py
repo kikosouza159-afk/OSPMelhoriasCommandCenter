@@ -24,11 +24,22 @@ def login_required(fn):
 STATUS_LIST = ["Backlog", "Em análise", "Em desenvolvimento", "Homologação", "Concluído", "Cancelado"]
 TIPO_LIST = ["Fraseologia", "Fluxo", "Validação CPF", "Oferta", "Encerramento", "Correção de lógica"]
 RISCO_LIST = ["Baixo", "Médio", "Alto", "Crítico"]
+PRIORIDADE_LIST = ["Altíssimo", "Alto", "Médio", "Baixo", "Baixíssimo"]
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def score_from_prioridade(nivel):
+    mapa = {
+        "Altíssimo": 5.0,
+        "Alto": 4.0,
+        "Médio": 3.0,
+        "Baixo": 2.0,
+        "Baixíssimo": 1.0
+    }
+    return mapa.get(nivel or "Médio", 3.0)
 
 def calc_prioridade(impacto, recorrencia, urgencia, esforco, risco):
     """
@@ -68,6 +79,7 @@ def init_db():
                 previous_asr TEXT,
                 frase_atual TEXT,
                 sugestao TEXT,
+                melhoria TEXT DEFAULT '',
                 obs TEXT,
                 tipo TEXT DEFAULT 'Fraseologia',
                 responsavel TEXT DEFAULT '',
@@ -82,7 +94,8 @@ def init_db():
                 data_criacao TEXT,
                 data_prevista TEXT DEFAULT '',
                 data_conclusao TEXT DEFAULT '',
-                prioridade_ordem INTEGER DEFAULT 0
+                prioridade_ordem INTEGER DEFAULT 0,
+                criado_por TEXT DEFAULT ''
             )
         """)
 
@@ -103,6 +116,32 @@ def init_db():
                 (idx, item["id"])
             )
 
+
+        # Migração V1.5.3 cadastro objetivo: usuário que inseriu a demanda
+        cols_criado = [c["name"] for c in conn.execute("PRAGMA table_info(demandas)").fetchall()]
+        if "criado_por" not in cols_criado:
+            conn.execute("ALTER TABLE demandas ADD COLUMN criado_por TEXT DEFAULT ''")
+        conn.execute("""
+            UPDATE demandas
+            SET criado_por = CASE
+                WHEN COALESCE(criado_por, '') = '' THEN 'admin'
+                ELSE criado_por
+            END
+        """)
+
+
+        # Migração V1.5.4: campo Melhoria para demandas que não são de fraseologia
+        cols_melhoria = [c["name"] for c in conn.execute("PRAGMA table_info(demandas)").fetchall()]
+        if "melhoria" not in cols_melhoria:
+            conn.execute("ALTER TABLE demandas ADD COLUMN melhoria TEXT DEFAULT ''")
+            conn.execute("""
+                UPDATE demandas
+                SET melhoria = CASE
+                    WHEN tipo <> 'Fraseologia' AND COALESCE(sugestao, '') <> '' THEN sugestao
+                    ELSE COALESCE(melhoria, '')
+                END
+            """)
+
         total = conn.execute("SELECT COUNT(*) AS qtd FROM demandas").fetchone()["qtd"]
         if total == 0:
             seed = [
@@ -122,11 +161,11 @@ def init_db():
                 score, nivel = calc_prioridade(row[6], row[7], row[8], row[9], row[10])
                 conn.execute("""
                     INSERT INTO demandas (
-                        call_id, previous_asr, frase_atual, sugestao, obs, tipo,
+                        call_id, previous_asr, frase_atual, sugestao, melhoria, obs, tipo,
                         impacto, recorrencia, urgencia, esforco, risco,
-                        score_prioridade, nivel_prioridade, data_criacao, prioridade_ordem
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, row[:6] + row[6:] + (score, nivel, datetime.now().strftime("%Y-%m-%d"), idx))
+                        score_prioridade, nivel_prioridade, data_criacao, prioridade_ordem, criado_por
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, row[:4] + ("",) + row[4:6] + row[6:] + (score, nivel, datetime.now().strftime("%Y-%m-%d"), idx, "admin"))
 
         # Migração visual de prioridades antigas para a nova régua simplificada
         antigas = conn.execute("""
@@ -169,7 +208,7 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html", status_list=STATUS_LIST, tipo_list=TIPO_LIST, risco_list=RISCO_LIST)
+    return render_template("index.html", status_list=STATUS_LIST, tipo_list=TIPO_LIST, risco_list=RISCO_LIST, prioridade_list=PRIORIDADE_LIST)
 
 @app.route("/api/demandas")
 @login_required
@@ -188,9 +227,9 @@ def listar_demandas():
         where.append("tipo = ?")
         params.append(tipo)
     if busca:
-        where.append("(call_id LIKE ? OR previous_asr LIKE ? OR frase_atual LIKE ? OR sugestao LIKE ? OR obs LIKE ?)")
+        where.append("(call_id LIKE ? OR previous_asr LIKE ? OR frase_atual LIKE ? OR sugestao LIKE ? OR melhoria LIKE ? OR obs LIKE ?)")
         like = f"%{busca}%"
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like])
 
     query = "SELECT * FROM demandas"
     if where:
@@ -240,20 +279,22 @@ def criar_demanda():
     urgencia = int(data.get("urgencia", 3))
     esforco = int(data.get("esforco", 2))
     risco = int(data.get("risco", 3))
-    score, nivel = calc_prioridade(impacto, recorrencia, urgencia, esforco, risco)
+    nivel = data.get("nivel_prioridade", "Médio")
+    score = score_from_prioridade(nivel)
 
     with get_conn() as conn:
         conn.execute("""
             INSERT INTO demandas (
-                call_id, previous_asr, frase_atual, sugestao, obs, tipo,
+                call_id, previous_asr, frase_atual, sugestao, melhoria, obs, tipo,
                 responsavel, status, impacto, recorrencia, urgencia, esforco, risco,
-                score_prioridade, nivel_prioridade, data_criacao, data_prevista, prioridade_ordem
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                score_prioridade, nivel_prioridade, data_criacao, data_prevista, prioridade_ordem, criado_por
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data.get("call_id", ""),
             data.get("previous_asr", ""),
             data.get("frase_atual", ""),
             data.get("sugestao", ""),
+            data.get("melhoria", ""),
             data.get("obs", ""),
             data.get("tipo", "Fraseologia"),
             data.get("responsavel", ""),
@@ -262,7 +303,8 @@ def criar_demanda():
             score, nivel,
             datetime.now().strftime("%Y-%m-%d"),
             data.get("data_prevista", ""),
-            int(data.get("prioridade_ordem") or 999999)
+            int(data.get("prioridade_ordem") or 999999),
+            session.get("usuario", "admin")
         ))
         conn.commit()
 
@@ -273,8 +315,8 @@ def criar_demanda():
 def atualizar_demanda(demanda_id):
     data = request.json or {}
     campos = [
-        "call_id", "previous_asr", "frase_atual", "sugestao", "obs", "tipo",
-        "responsavel", "status", "impacto", "recorrencia", "urgencia", "esforco",
+        "call_id", "previous_asr", "frase_atual", "sugestao", "melhoria", "obs", "tipo",
+        "responsavel", "status", "nivel_prioridade", "impacto", "recorrencia", "urgencia", "esforco",
         "risco", "data_prevista", "data_conclusao", "prioridade_ordem"
     ]
 
@@ -286,7 +328,8 @@ def atualizar_demanda(demanda_id):
     urgencia = int(data.get("urgencia", 3))
     esforco = int(data.get("esforco", 2))
     risco = int(data.get("risco", 3))
-    score, nivel = calc_prioridade(impacto, recorrencia, urgencia, esforco, risco)
+    nivel = data.get("nivel_prioridade", "Médio")
+    score = score_from_prioridade(nivel)
 
     for c in campos:
         if c in data:
@@ -331,6 +374,7 @@ def deletar_demanda(demanda_id):
         conn.commit()
     return jsonify({"ok": True})
 
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, host="0.0.0.0", port=5000)

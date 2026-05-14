@@ -90,8 +90,9 @@
               <th>Tipo</th>
               <th>CallId</th>
               <th>Frase atual</th>
-              <th>Sugestão</th>
+              <th>Sugestão / Melhoria</th>
               <th>Obs</th>
+              <th>Inserido por</th>
               <th>Resp.</th>
               <th>Ações</th>
             </tr>
@@ -111,32 +112,40 @@
 
       <input type="hidden" id="id" />
 
-      <div class="form-grid">
+      <div class="form-grid form-grid-objetivo">
         <div><label>CallIdtelecom</label><input id="call_id" /></div>
-        <div><label>PreviousAsrTranscription</label><input id="previous_asr" /></div>
-        <div><label>Tipo</label><select id="tipo">{% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}</select></div>
+        <div><label>Tipo</label><select id="tipo" onchange="toggleFraseologiaFields()">{% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}</select></div>
         <div><label>Status</label><select id="status">{% for s in status_list %}<option value="{{s}}">{{s}}</option>{% endfor %}</select></div>
+        <div><label>Classificação</label><select id="nivel_prioridade">{% for p in prioridade_list %}<option value="{{p}}">{{p}}</option>{% endfor %}</select></div>
         <div><label>Id Prioridade</label><input id="prioridade_ordem" type="number" min="1" placeholder="Ex: 1" /></div>
         <div><label>Responsável</label><input id="responsavel" placeholder="Dev, squad ou pessoa" /></div>
         <div><label>Data prevista</label><input id="data_prevista" type="date" /></div>
+        <div><label>Inserido por</label><input id="criado_por_view" value="{{ session.get('usuario', 'admin') }}" disabled /></div>
       </div>
 
-      <label>Frase atual do bot</label>
-      <textarea id="frase_atual" rows="3"></textarea>
+      <input type="hidden" id="previous_asr" value="" />
 
-      <label>Sugestão de fraseologia / ajuste</label>
-      <textarea id="sugestao" rows="3"></textarea>
+      <div id="fraseologiaBox" class="conditional-box">
+        <label>Frase atual do bot</label>
+        <textarea id="frase_atual" rows="3" placeholder="Opcional para demandas de fraseologia"></textarea>
 
-      <label>Observação / justificativa</label>
-      <textarea id="obs" rows="2"></textarea>
-
-      <div class="score-grid">
-        <div><label>Impacto</label><input id="impacto" type="number" min="1" max="5" value="3" /></div>
-        <div><label>Recorrência</label><input id="recorrencia" type="number" min="1" max="5" value="3" /></div>
-        <div><label>Urgência</label><input id="urgencia" type="number" min="1" max="5" value="3" /></div>
-        <div><label>Esforço</label><input id="esforco" type="number" min="1" max="5" value="2" /></div>
-        <div><label>Risco</label><input id="risco" type="number" min="1" max="5" value="3" /></div>
+        <label>Sugestão de fraseologia / ajuste</label>
+        <textarea id="sugestao" rows="3" placeholder="Opcional para demandas de fraseologia"></textarea>
       </div>
+
+      <div id="melhoriaBox" class="conditional-box">
+        <label>Melhoria</label>
+        <textarea id="melhoria" rows="3" placeholder="Descreva objetivamente a melhoria solicitada"></textarea>
+
+        <label>Observação</label>
+        <textarea id="obs" rows="3" placeholder="Inclua contexto, regra, justificativa ou detalhe para o desenvolvimento"></textarea>
+      </div>
+
+      <input type="hidden" id="impacto" value="3" />
+      <input type="hidden" id="recorrencia" value="3" />
+      <input type="hidden" id="urgencia" value="3" />
+      <input type="hidden" id="esforco" value="2" />
+      <input type="hidden" id="risco" value="3" />
 
       <div class="modal-actions">
         <button type="button" class="ghost" onclick="fecharModal()">Cancelar</button>

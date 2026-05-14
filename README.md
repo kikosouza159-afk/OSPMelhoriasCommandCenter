@@ -161,3 +161,39 @@ Start Command:
 ```bash
 gunicorn app:app
 ```
+
+
+## Atualização V1.5.3 - Cadastro objetivo
+
+Ajustes aplicados:
+- Cadastro simplificado para gestão.
+- Removidos da tela de cadastro:
+  - PreviousAsrTranscription
+  - Observação / justificativa
+  - Impacto
+  - Recorrência
+  - Urgência
+  - Esforço
+  - Risco
+- Campo de classificação virou seleção direta:
+  - Altíssimo
+  - Alto
+  - Médio
+  - Baixo
+  - Baixíssimo
+- Frase atual do bot e Sugestão aparecem apenas quando o tipo for `Fraseologia`.
+- Incluído `Inserido por`, preenchido automaticamente de acordo com o login.
+- Mantida a correção para deploy com Gunicorn no Render.
+
+
+## Atualização V1.5.4 - Melhoria e Observação
+
+Ajustes aplicados:
+- Para tipo `Fraseologia`, aparecem:
+  - Frase atual do bot
+  - Sugestão de fraseologia / ajuste
+- Para os demais tipos, aparecem:
+  - Melhoria
+  - Observação
+- Incluído campo `melhoria` no banco SQLite.
+- A esteira passa a exibir `Sugestão / Melhoria` e `Obs`.
