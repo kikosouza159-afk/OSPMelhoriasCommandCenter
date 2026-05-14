@@ -75,8 +75,22 @@
       <div class="section-head">
         <div>
           <h2>Esteira de demandas</h2>
-          <p>Arraste as linhas para alterar a ordem de prioridade. O Id Prioridade também pode ser editado no cadastro. ⚡</p>
+          <p>Use os cards de status como filtro rápido para a lista abaixo. Arraste as linhas para alterar a ordem de prioridade. ⚡</p>
         </div>
+      </div>
+
+      <div class="status-strip" id="statusCards">
+        <button type="button" class="status-filter-card active" data-status="" onclick="aplicarFiltroStatusCard('')">
+          <span>Todos</span>
+          <strong id="statusCountAll">0</strong>
+        </button>
+
+        {% for s in status_list %}
+        <button type="button" class="status-filter-card" data-status="{{ s }}" onclick="aplicarFiltroStatusCard('{{ s }}')">
+          <span>{{ s }}</span>
+          <strong>0</strong>
+        </button>
+        {% endfor %}
       </div>
 
       <div class="table-wrap">

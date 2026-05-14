@@ -223,3 +223,14 @@ if usuario in USERS and USERS[usuario] == senha:
     session["logged_in"] = True
     session["usuario"] = usuario
 ```
+
+
+## Atualização V1.5.6 - Cards de status e botões corrigidos
+
+Ajustes aplicados neste pacote:
+- Incluídos cards de status dentro da esteira para filtrar a lista abaixo.
+- Cards disponíveis: Todos, Backlog, Em análise, Em desenvolvimento, Homologação, Concluído e Cancelado.
+- Os cards exibem a quantidade por status.
+- Ao clicar no card, o filtro de status é aplicado automaticamente.
+- Corrigido o `app.js`, removendo duplicidades de função e chamadas quebradas.
+- Botões Editar e Excluir mantidos lado a lado e com largura estável.
