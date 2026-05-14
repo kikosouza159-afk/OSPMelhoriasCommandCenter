@@ -10,14 +10,12 @@ DB_PATH = APP_DIR / "data" / "demandas.db"
 app = Flask(__name__)
 app.secret_key = "olos-fraseologia-cockpit-v1-2"
 
-LOGIN_USER = "admin"
-LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "elvis"
-LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "michele"
-LOGIN_PASSWORD = "olos123"
-LOGIN_USER = "nubia"
-LOGIN_PASSWORD = "olos123"
+USERS = {
+    "admin": "olos123",
+    "elvis": "olos123",
+    "michele": "olos123",
+    "nubia": "olos123"
+}
 
 def login_required(fn):
     @wraps(fn)
