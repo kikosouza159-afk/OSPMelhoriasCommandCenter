@@ -15,7 +15,8 @@ USERS = {
     "elvis": "olos123",
     "michele": "olos123",
     "nubia": "olos123",
-    "marcelo": "olos123"
+    "marcelo": "olos123",
+    "hilde": "olos123"
 }
 
 def login_required(fn):
