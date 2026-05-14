@@ -11,6 +11,7 @@ app = Flask(__name__)
 app.secret_key = "olos-fraseologia-cockpit-v1-2"
 
 USERS = {
+    "gerber": "nicolas1",
     "admin": "olos123",
     "elvis": "olos123",
     "michele": "olos123",
