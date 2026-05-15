@@ -224,13 +224,44 @@ if usuario in USERS and USERS[usuario] == senha:
     session["usuario"] = usuario
 ```
 
+## Atualização V1.5.7 - Persistência no Render com PostgreSQL
 
-## Atualização V1.5.6 - Cards de status e botões corrigidos
+Esta versão corrige o problema de perda das demandas após atualizar/reiniciar o site no Render.
 
-Ajustes aplicados neste pacote:
-- Incluídos cards de status dentro da esteira para filtrar a lista abaixo.
-- Cards disponíveis: Todos, Backlog, Em análise, Em desenvolvimento, Homologação, Concluído e Cancelado.
-- Os cards exibem a quantidade por status.
-- Ao clicar no card, o filtro de status é aplicado automaticamente.
-- Corrigido o `app.js`, removendo duplicidades de função e chamadas quebradas.
-- Botões Editar e Excluir mantidos lado a lado e com largura estável.
+### O que mudou
+
+- O painel agora usa PostgreSQL quando existir a variável de ambiente `DATABASE_URL`.
+- Localmente, sem `DATABASE_URL`, ele continua usando SQLite em `data/demandas.db`.
+- A carga automática das 11 demandas de exemplo foi desativada por padrão.
+- Se quiser carregar dados de exemplo, configure `LOAD_DEMO_DATA=true`.
+
+### Como configurar no Render
+
+1. Crie um banco PostgreSQL no Render.
+2. Copie a `Internal Database URL`.
+3. No serviço Web do painel, vá em **Environment**.
+4. Crie a variável:
+
+```text
+DATABASE_URL=<cole aqui a Internal Database URL do PostgreSQL>
+```
+
+5. Opcionalmente, crie:
+
+```text
+SECRET_KEY=uma_chave_segura
+```
+
+6. Build Command:
+
+```bash
+pip install -r requirements.txt
+```
+
+7. Start Command:
+
+```bash
+gunicorn app:app
+```
+
+Com isso, as demandas ficam salvas no PostgreSQL e não somem após novo deploy/restart.
