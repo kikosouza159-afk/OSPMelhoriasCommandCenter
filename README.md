@@ -224,44 +224,67 @@ if usuario in USERS and USERS[usuario] == senha:
     session["usuario"] = usuario
 ```
 
-## Atualização V1.5.7 - Persistência no Render com PostgreSQL
 
-Esta versão corrige o problema de perda das demandas após atualizar/reiniciar o site no Render.
+## Atualização V1.5.6 - Cards de status e botões corrigidos
+
+Ajustes aplicados neste pacote:
+- Incluídos cards de status dentro da esteira para filtrar a lista abaixo.
+- Cards disponíveis: Todos, Backlog, Em análise, Em desenvolvimento, Homologação, Concluído e Cancelado.
+- Os cards exibem a quantidade por status.
+- Ao clicar no card, o filtro de status é aplicado automaticamente.
+- Corrigido o `app.js`, removendo duplicidades de função e chamadas quebradas.
+- Botões Editar e Excluir mantidos lado a lado e com largura estável.
+
+
+## Atualização V1.5.8 - Persistência compartilhada no Render
+
+Esta versão corrige o problema de uma pessoa salvar uma demanda e ela não aparecer para outra pessoa.
+
+### Ponto principal
+
+Para os dados serem compartilhados entre usuários, o Render precisa usar um banco PostgreSQL comum.  
+Se a variável `DATABASE_URL` não estiver configurada no Render, o app usa SQLite local e os dados não ficam compartilhados/persistentes.
 
 ### O que mudou
 
-- O painel agora usa PostgreSQL quando existir a variável de ambiente `DATABASE_URL`.
-- Localmente, sem `DATABASE_URL`, ele continua usando SQLite em `data/demandas.db`.
-- A carga automática das 11 demandas de exemplo foi desativada por padrão.
-- Se quiser carregar dados de exemplo, configure `LOAD_DEMO_DATA=true`.
+- Suporte a PostgreSQL via variável `DATABASE_URL`.
+- Localmente, sem `DATABASE_URL`, continua usando SQLite.
+- Banner no painel mostrando se o banco está em:
+  - `PostgreSQL compartilhado`
+  - `SQLite local`
+- Endpoint técnico: `/api/db-status`
+- A carga das 11 demandas de exemplo fica desativada por padrão.
+- Se quiser carregar exemplos, use `LOAD_DEMO_DATA=true`.
 
-### Como configurar no Render
+### Configuração obrigatória no Render
 
 1. Crie um banco PostgreSQL no Render.
 2. Copie a `Internal Database URL`.
-3. No serviço Web do painel, vá em **Environment**.
-4. Crie a variável:
+3. No Web Service do painel, abra **Environment**.
+4. Adicione:
 
 ```text
-DATABASE_URL=<cole aqui a Internal Database URL do PostgreSQL>
+DATABASE_URL=<cole aqui a Internal Database URL>
 ```
 
-5. Opcionalmente, crie:
+5. Faça novo deploy.
 
-```text
-SECRET_KEY=uma_chave_segura
-```
+### Configuração do serviço
 
-6. Build Command:
+Build Command:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-7. Start Command:
+Start Command:
 
 ```bash
 gunicorn app:app
 ```
 
-Com isso, as demandas ficam salvas no PostgreSQL e não somem após novo deploy/restart.
+Quando o painel estiver correto, aparecerá um banner com:
+
+```text
+PostgreSQL compartilhado - Dados compartilhados e persistentes.
+```

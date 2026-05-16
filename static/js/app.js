@@ -1,3 +1,31 @@
+
+async function carregarDbStatus() {
+  try {
+    const resp = await fetch("/api/db-status");
+    const data = await resp.json();
+
+    const banner = $("dbBanner");
+    const mode = $("dbMode");
+    const warning = $("dbWarning");
+
+    if (!banner || !mode || !warning) return;
+
+    mode.innerText = data.mode || "Banco";
+    warning.innerText = data.warning || "";
+
+    if (data.using_postgres) {
+      banner.classList.add("ok");
+      banner.style.display = "flex";
+      warning.innerText = "Dados compartilhados e persistentes.";
+    } else {
+      banner.classList.remove("ok");
+      banner.style.display = "flex";
+    }
+  } catch (error) {
+    console.warn("Não foi possível carregar status do banco", error);
+  }
+}
+
 let demandas = [];
 let chartStatus = null;
 let chartTipo = null;
@@ -11,6 +39,7 @@ function debouncedLoad() {
 }
 
 async function carregarTudo() {
+  await carregarDbStatus();
   await carregarResumo();
   await carregarDemandas();
 }
@@ -25,6 +54,7 @@ async function carregarResumo() {
   $("kpiConcluidas").innerText = data.concluidas;
   $("kpiScore").innerText = data.score_medio;
 
+  atualizarCardsStatus(data);
   renderChart("chartStatus", data.por_status, "Status", "status");
   renderChart("chartTipo", data.por_tipo, "Tipo", "tipo");
 }
@@ -41,6 +71,38 @@ async function carregarDemandas() {
   renderTabela();
 }
 
+function atualizarCardsStatus(data) {
+  const total = data.total || 0;
+  const porStatus = data.por_status || {};
+  const filtroAtual = $("fStatus") ? $("fStatus").value : "";
+
+  const allCount = $("statusCountAll");
+  if (allCount) allCount.innerText = total;
+
+  document.querySelectorAll(".status-filter-card[data-status]").forEach(card => {
+    const status = card.dataset.status || "";
+    const countEl = card.querySelector("strong");
+
+    if (countEl) {
+      countEl.innerText = status ? (porStatus[status] || 0) : total;
+    }
+
+    card.classList.toggle("active", status === filtroAtual);
+  });
+}
+
+function aplicarFiltroStatusCard(status) {
+  if ($("fStatus")) {
+    $("fStatus").value = status;
+  }
+
+  document.querySelectorAll(".status-filter-card[data-status]").forEach(card => {
+    card.classList.toggle("active", (card.dataset.status || "") === status);
+  });
+
+  carregarTudo();
+}
+
 function renderTabela() {
   const tbody = $("tbody");
   tbody.innerHTML = "";
@@ -51,22 +113,26 @@ function renderTabela() {
     tr.dataset.id = d.id;
     tr.className = "draggable-row";
 
+    const melhoriaOuSugestao = d.tipo === "Fraseologia"
+      ? (d.sugestao || "")
+      : (d.melhoria || d.sugestao || "");
+
     tr.innerHTML = `
       <td class="drag-cell" title="Arraste para reordenar">⋮⋮</td>
       <td><span class="priority-id">${escapeHtml(d.prioridade_ordem || "")}</span></td>
-      <td><span class="badge ${classePrioridade(d.nivel_prioridade)}">${d.nivel_prioridade}</span></td>
-      <td><span class="badge status">${escapeHtml(d.status)}</span></td>
-      <td>${escapeHtml(d.tipo)}</td>
-      <td>${escapeHtml(d.call_id)}</td>
-      <td><div class="truncate">${escapeHtml(d.frase_atual)}</div></td>
-      <td><div class="truncate">${escapeHtml(d.tipo === "Fraseologia" ? d.sugestao : (d.melhoria || d.sugestao || ""))}</div></td>
+      <td><span class="badge ${classePrioridade(d.nivel_prioridade)}">${escapeHtml(d.nivel_prioridade || "")}</span></td>
+      <td><span class="badge status">${escapeHtml(d.status || "")}</span></td>
+      <td>${escapeHtml(d.tipo || "")}</td>
+      <td>${escapeHtml(d.call_id || "")}</td>
+      <td><div class="truncate">${escapeHtml(d.frase_atual || "")}</div></td>
+      <td><div class="truncate">${escapeHtml(melhoriaOuSugestao)}</div></td>
       <td><div class="truncate">${escapeHtml(d.obs || "")}</div></td>
       <td>${escapeHtml(d.criado_por || "")}</td>
       <td>${escapeHtml(d.responsavel || "")}</td>
       <td>
         <div class="actions">
-          <button class="ghost" onclick="editar(${d.id})">Editar</button>
-          <button class="ghost" onclick="excluir(${d.id})">Excluir</button>
+          <button type="button" class="ghost btn-edit" onclick="editar(${d.id})">Editar</button>
+          <button type="button" class="ghost btn-delete" onclick="excluir(${d.id})">Excluir</button>
         </div>
       </td>
     `;
@@ -143,8 +209,10 @@ function classePrioridade(nivel) {
 
 function renderChart(canvasId, obj, label, tipo) {
   const ctx = $(canvasId);
-  const labels = Object.keys(obj);
-  const values = Object.values(obj);
+  if (!ctx) return;
+
+  const labels = Object.keys(obj || {});
+  const values = Object.values(obj || {});
 
   const current = tipo === "status" ? chartStatus : chartTipo;
   if (current) current.destroy();
@@ -189,16 +257,24 @@ function fecharModal() {
 }
 
 function limparForm() {
-  ["id","call_id","previous_asr","frase_atual","sugestao","melhoria","obs","responsavel","data_prevista","prioridade_ordem"].forEach(id => $(id).value = "");
+  ["id", "call_id", "previous_asr", "frase_atual", "sugestao", "melhoria", "obs", "responsavel", "data_prevista", "prioridade_ordem"].forEach(id => {
+    if ($(id)) $(id).value = "";
+  });
+
   $("tipo").value = "Fraseologia";
   $("status").value = "Backlog";
   $("nivel_prioridade").value = "Médio";
-  toggleFraseologiaFields();
   $("impacto").value = 3;
   $("recorrencia").value = 3;
   $("urgencia").value = 3;
   $("esforco").value = 2;
   $("risco").value = 3;
+
+  if ($("criado_por_view")) {
+    $("criado_por_view").value = $("criado_por_view").defaultValue || "";
+  }
+
+  toggleFraseologiaFields();
 }
 
 function editar(id) {
@@ -206,11 +282,17 @@ function editar(id) {
   if (!d) return;
 
   $("modalTitle").innerText = `Editar demanda #${id}`;
+
   Object.keys(d).forEach(k => {
     if ($(k)) $(k).value = d[k] ?? "";
   });
+
   $("id").value = d.id;
-  if ($("criado_por_view")) $("criado_por_view").value = d.criado_por || "";
+
+  if ($("criado_por_view")) {
+    $("criado_por_view").value = d.criado_por || "";
+  }
+
   toggleFraseologiaFields();
   $("modal").showModal();
 }
@@ -249,26 +331,16 @@ async function salvarDemanda(event) {
   });
 
   fecharModal();
-  
-function toggleFraseologiaFields() {
-  const fraseologiaBox = $("fraseologiaBox");
-  const melhoriaBox = $("melhoriaBox");
-  if (!fraseologiaBox || !melhoriaBox) return;
-
-  const tipo = $("tipo").value;
-  const isFraseologia = tipo === "Fraseologia";
-
-  fraseologiaBox.style.display = isFraseologia ? "block" : "none";
-  melhoriaBox.style.display = isFraseologia ? "none" : "block";
-}
-
-carregarTudo();
+  await carregarTudo();
 }
 
 async function excluir(id) {
   if (!confirm("Deseja excluir esta demanda?")) return;
+
   await fetch(`/api/demandas/${id}`, { method: "DELETE" });
-  
+  await carregarTudo();
+}
+
 function toggleFraseologiaFields() {
   const fraseologiaBox = $("fraseologiaBox");
   const melhoriaBox = $("melhoriaBox");
@@ -279,9 +351,6 @@ function toggleFraseologiaFields() {
 
   fraseologiaBox.style.display = isFraseologia ? "block" : "none";
   melhoriaBox.style.display = isFraseologia ? "none" : "block";
-}
-
-carregarTudo();
 }
 
 function escapeHtml(value) {
@@ -291,19 +360,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-
-function toggleFraseologiaFields() {
-  const fraseologiaBox = $("fraseologiaBox");
-  const melhoriaBox = $("melhoriaBox");
-  if (!fraseologiaBox || !melhoriaBox) return;
-
-  const tipo = $("tipo").value;
-  const isFraseologia = tipo === "Fraseologia";
-
-  fraseologiaBox.style.display = isFraseologia ? "block" : "none";
-  melhoriaBox.style.display = isFraseologia ? "none" : "block";
 }
 
 carregarTudo();
