@@ -288,3 +288,40 @@ Quando o painel estiver correto, aparecerá um banner com:
 ```text
 PostgreSQL compartilhado - Dados compartilhados e persistentes.
 ```
+
+
+## Atualização V1.5.9 - Correção de driver PostgreSQL no Render
+
+Correção aplicada para o erro:
+
+```text
+Error: psycopg2-binary não está instalado. Verifique o requirements.txt.
+```
+
+Mudanças:
+- Incluído suporte ao driver `pg8000`, que é puro Python.
+- O app tenta usar `psycopg2` primeiro.
+- Se `psycopg2` não estiver disponível, usa `pg8000`.
+- Mantido `DATABASE_URL` como variável obrigatória para persistência compartilhada.
+- Endpoint `/api/db-status` agora informa o driver em uso.
+
+No Render, garanta que o `requirements.txt` está na raiz do repositório e contém:
+
+```text
+Flask==3.0.3
+gunicorn==22.0.0
+pg8000==1.31.2
+psycopg2-binary==2.9.9
+```
+
+Depois faça um novo deploy com:
+
+```bash
+pip install -r requirements.txt
+```
+
+e:
+
+```bash
+gunicorn app:app
+```

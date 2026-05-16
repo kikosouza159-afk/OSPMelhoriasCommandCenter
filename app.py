@@ -4,12 +4,19 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
+from urllib.parse import urlparse
 
 try:
     import psycopg2
     import psycopg2.extras
 except ImportError:
     psycopg2 = None
+
+try:
+    import pg8000.native
+except ImportError:
+    pg8000 = None
+
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = APP_DIR / "data" / "demandas.db"
@@ -19,7 +26,7 @@ IS_RENDER = bool(os.environ.get("RENDER"))
 USE_POSTGRES = bool(DATABASE_URL)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "olos-fraseologia-cockpit-v1-8")
+app.secret_key = os.environ.get("SECRET_KEY", "olos-fraseologia-cockpit-v1-9")
 
 USERS = {
     "admin": "olos123",
@@ -47,18 +54,47 @@ def login_required(fn):
 
 
 def db_mode_name():
-    return "PostgreSQL compartilhado" if USE_POSTGRES else "SQLite local"
+    if USE_POSTGRES:
+        if psycopg2 is not None:
+            return "PostgreSQL compartilhado"
+        if pg8000 is not None:
+            return "PostgreSQL compartilhado"
+        return "PostgreSQL sem driver instalado"
+    return "SQLite local"
 
 
 def placeholder():
     return "%s" if USE_POSTGRES else "?"
 
 
+def normalize_database_url(url):
+    # Render normalmente entrega postgres://. psycopg2 aceita, pg8000 também trabalha com parse manual.
+    return url
+
+
 def get_conn():
     if USE_POSTGRES:
-        if psycopg2 is None:
-            raise RuntimeError("psycopg2-binary não está instalado. Verifique o requirements.txt.")
-        return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        if psycopg2 is not None:
+            return psycopg2.connect(
+                normalize_database_url(DATABASE_URL),
+                cursor_factory=psycopg2.extras.RealDictCursor
+            )
+
+        if pg8000 is not None:
+            parsed = urlparse(DATABASE_URL)
+            database = parsed.path.lstrip("/")
+            return pg8000.native.Connection(
+                user=parsed.username,
+                password=parsed.password,
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                database=database,
+                ssl_context=True
+            )
+
+        raise RuntimeError(
+            "Nenhum driver PostgreSQL instalado. Verifique se requirements.txt contém pg8000 ou psycopg2-binary."
+        )
 
     DB_PATH.parent.mkdir(exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -66,37 +102,56 @@ def get_conn():
     return conn
 
 
+def is_pg8000_connection(conn):
+    return USE_POSTGRES and pg8000 is not None and psycopg2 is None
+
+
+def convert_placeholders_for_pg8000(sql):
+    # pg8000.native usa :p0, :p1... em vez de %s.
+    count = sql.count("%s")
+    for i in range(count):
+        sql = sql.replace("%s", f":p{i}", 1)
+    return sql
+
+
+def params_to_pg8000_dict(params):
+    return {f"p{i}": v for i, v in enumerate(params or [])}
+
+
 def fetchall(sql, params=None):
     params = params or []
     with get_conn() as conn:
+        if is_pg8000_connection(conn):
+            rows = conn.run(convert_placeholders_for_pg8000(sql), **params_to_pg8000_dict(params))
+            columns = [c["name"] for c in conn.columns]
+            return [dict(zip(columns, row)) for row in rows]
+
         cur = conn.cursor()
         cur.execute(sql, params)
         rows = cur.fetchall()
-    return [dict(r) for r in rows]
+        return [dict(r) for r in rows]
 
 
 def fetchone(sql, params=None):
-    params = params or []
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        row = cur.fetchone()
-    return dict(row) if row else None
+    rows = fetchall(sql, params)
+    return rows[0] if rows else None
 
 
 def execute(sql, params=None):
     params = params or []
     with get_conn() as conn:
+        if is_pg8000_connection(conn):
+            conn.run(convert_placeholders_for_pg8000(sql), **params_to_pg8000_dict(params))
+            return
+
         cur = conn.cursor()
         cur.execute(sql, params)
         conn.commit()
 
 
 def execute_many(sql, params_list):
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.executemany(sql, params_list)
-        conn.commit()
+    for params in params_list:
+        execute(sql, params)
 
 
 def column_exists(table_name, column_name):
@@ -202,6 +257,8 @@ def init_db():
         END
     """)
 
+    ph = placeholder()
+
     sem_ordem = fetchall("""
         SELECT id
         FROM demandas
@@ -209,7 +266,6 @@ def init_db():
         ORDER BY score_prioridade DESC, id ASC
     """)
 
-    ph = placeholder()
     for idx, item in enumerate(sem_ordem, start=1):
         execute(f"UPDATE demandas SET prioridade_ordem = {ph} WHERE id = {ph}", [idx, item["id"]])
 
@@ -298,12 +354,17 @@ def index():
 @app.route("/api/db-status")
 @login_required
 def db_status():
+    driver = "sqlite"
+    if USE_POSTGRES:
+        driver = "psycopg2" if psycopg2 is not None else "pg8000" if pg8000 is not None else "sem driver"
+
     return jsonify({
         "mode": db_mode_name(),
-        "using_postgres": USE_POSTGRES,
+        "using_postgres": USE_POSTGRES and driver != "sem driver",
         "database_url_configured": bool(DATABASE_URL),
+        "driver": driver,
         "render": IS_RENDER,
-        "warning": "" if USE_POSTGRES else "ATENÇÃO: usando SQLite local. Em Render, os dados não são compartilhados entre usuários e podem sumir após restart/deploy."
+        "warning": "" if USE_POSTGRES and driver != "sem driver" else "ATENÇÃO: usando SQLite local ou PostgreSQL sem driver. No Render, configure DATABASE_URL e garanta que requirements.txt foi instalado."
     })
 
 
