@@ -30,6 +30,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "olos-fraseologia-cockpit-v1-9")
 
 USERS = {
     "admin": "olos123",
+    "gerber": "olos123",
     "elvis": "olos123",
     "michele": "olos123",
     "nubia": "olos123",
