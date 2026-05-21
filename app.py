@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from flask import Flask, jsonify, render_template, request
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
-except Exception:  # keeps local JSON fallback working if psycopg2 is not installed
+except Exception:
     psycopg2 = None
     RealDictCursor = None
 
@@ -25,6 +26,9 @@ DATA_FILE = Path(os.environ.get("DATA_FILE", DATA_DIR / "demandas.json"))
 # Render/Postgres: configure a variável DATABASE_URL no Web Service.
 # Exemplo: DATABASE_URL=postgresql://usuario:senha@host:5432/banco
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 FORCE_POSTGRES = os.getenv("FORCE_POSTGRES", "1").strip() != "0"
 USE_POSTGRES = bool(DATABASE_URL)
 
@@ -37,6 +41,17 @@ def add_no_cache_headers(response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.errorhandler(Exception)
+def handle_exception(error):
+    app.logger.error("Erro não tratado no painel:\n%s", traceback.format_exc())
+    return jsonify({
+        "ok": False,
+        "error": "Erro interno no servidor.",
+        "detalhe": str(error),
+        "storage": "postgres" if USE_POSTGRES else "sem_database_url",
+    }), 500
 
 
 # Para incluir usuários, altere apenas este bloco.
@@ -59,11 +74,7 @@ def build_users() -> dict[str, str]:
 
 
 def build_delete_allowed() -> set[str]:
-    return {
-        str(u["usuario"]).strip().lower()
-        for u in USER_ACCESS
-        if bool(u.get("pode_excluir"))
-    }
+    return {str(u["usuario"]).strip().lower() for u in USER_ACCESS if bool(u.get("pode_excluir"))}
 
 
 USERS = build_users()
@@ -78,8 +89,6 @@ STATUS_ALIASES = {
     "PENDENTES": "Pendentes",
 }
 
-# Não popular mais com demandas antigas do código.
-# Com Postgres, se não houver dados, o painel abre vazio.
 DEFAULT_DEMANDAS: list[dict[str, Any]] = []
 
 
@@ -92,6 +101,7 @@ def get_db_connection():
 
 
 def init_db() -> None:
+    """Cria e migra a tabela sem apagar dados já cadastrados."""
     if not USE_POSTGRES:
         return
     with get_db_connection() as conn:
@@ -99,21 +109,57 @@ def init_db() -> None:
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS demandas (
-                    uid TEXT PRIMARY KEY,
-                    prioridade INTEGER NOT NULL,
-                    cliente TEXT NOT NULL DEFAULT 'Geral',
-                    data TEXT NOT NULL DEFAULT '',
-                    melhoria TEXT NOT NULL DEFAULT '',
-                    observacao TEXT NOT NULL DEFAULT '',
-                    responsavel TEXT NOT NULL DEFAULT '',
-                    prazo TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL DEFAULT 'Em Andamento',
-                    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    uid TEXT,
+                    prioridade INTEGER,
+                    cliente TEXT,
+                    data TEXT,
+                    melhoria TEXT,
+                    observacao TEXT,
+                    responsavel TEXT,
+                    prazo TEXT,
+                    status TEXT,
+                    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
+
+            # Migração defensiva caso a tabela tenha sido criada por versão anterior.
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS uid TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS prioridade INTEGER;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS cliente TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS data TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS melhoria TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS observacao TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS responsavel TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS prazo TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS status TEXT;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            cur.execute("ALTER TABLE demandas ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+
+            cur.execute("UPDATE demandas SET uid = md5(random()::text || clock_timestamp()::text) WHERE uid IS NULL OR uid = '';")
+            cur.execute("UPDATE demandas SET cliente = COALESCE(NULLIF(cliente, ''), 'Geral');")
+            cur.execute("UPDATE demandas SET data = COALESCE(data, '');")
+            cur.execute("UPDATE demandas SET melhoria = COALESCE(melhoria, '');")
+            cur.execute("UPDATE demandas SET observacao = COALESCE(observacao, '');")
+            cur.execute("UPDATE demandas SET responsavel = COALESCE(responsavel, '');")
+            cur.execute("UPDATE demandas SET prazo = COALESCE(prazo, '');")
+            cur.execute("UPDATE demandas SET status = COALESCE(NULLIF(status, ''), 'Em Andamento');")
+            cur.execute(
+                """
+                WITH ordenado AS (
+                    SELECT uid, ROW_NUMBER() OVER (ORDER BY COALESCE(prioridade, 999999), criado_em, uid) AS rn
+                    FROM demandas
+                )
+                UPDATE demandas d
+                   SET prioridade = o.rn
+                  FROM ordenado o
+                 WHERE d.uid = o.uid
+                   AND (d.prioridade IS NULL OR d.prioridade <= 0);
+                """
+            )
             cur.execute("CREATE INDEX IF NOT EXISTS idx_demandas_prioridade ON demandas(prioridade);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_demandas_uid ON demandas(uid);")
         conn.commit()
 
 
@@ -121,22 +167,51 @@ def ensure_data_file() -> None:
     if USE_POSTGRES:
         init_db()
         return
-
-    # Segurança para produção no Render:
-    # se DATABASE_URL não estiver configurada, NÃO volta para JSON antigo nem dados mockados.
-    # Isso evita o efeito "voltou tudo" após sleep/redeploy do Render.
     if FORCE_POSTGRES:
         return
-
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not DATA_FILE.exists():
         rows = [{"uid": uuid.uuid4().hex, **item} for item in DEFAULT_DEMANDAS]
         save_raw(rows)
 
 
+def normalize_status(value: Any) -> str:
+    status = str(value or "Em Andamento").strip()
+    status = STATUS_ALIASES.get(status, status)
+    if status not in ALLOWED_STATUS:
+        status = "Em Andamento"
+    return status
+
+
+def normalize_rows(rows: list[dict[str, Any]], persist: bool = False) -> list[dict[str, Any]]:
+    changed = False
+    cleaned_rows = []
+    for item in rows:
+        if not isinstance(item, dict):
+            changed = True
+            continue
+        clean = dict(item)
+        if "uid" not in clean or not clean.get("uid"):
+            clean["uid"] = uuid.uuid4().hex
+            changed = True
+        clean["cliente"] = str(clean.get("cliente") or "Geral").strip() or "Geral"
+        clean["data"] = str(clean.get("data") or "").strip()
+        clean["melhoria"] = str(clean.get("melhoria") or "").strip()
+        clean["observacao"] = str(clean.get("observacao") or "").strip()
+        clean["responsavel"] = str(clean.get("responsavel") or "").strip()
+        clean["prazo"] = str(clean.get("prazo") or "").strip()
+        original_status = clean.get("status")
+        clean["status"] = normalize_status(original_status)
+        if clean["status"] != original_status:
+            changed = True
+        cleaned_rows.append(clean)
+    if changed and persist:
+        save_raw(cleaned_rows)
+    return cleaned_rows
+
+
 def load_raw() -> list[dict[str, Any]]:
     ensure_data_file()
-
     if USE_POSTGRES:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -144,7 +219,7 @@ def load_raw() -> list[dict[str, Any]]:
                     """
                     SELECT uid, cliente, data, melhoria, observacao, responsavel, prazo, status
                     FROM demandas
-                    ORDER BY prioridade ASC, criado_em ASC;
+                    ORDER BY COALESCE(prioridade, 999999) ASC, criado_em ASC, uid ASC;
                     """
                 )
                 rows = [dict(row) for row in cur.fetchall()]
@@ -160,43 +235,17 @@ def load_raw() -> list[dict[str, Any]]:
         data = []
     if not isinstance(data, list):
         data = []
-
     return normalize_rows(data, persist=True)
 
 
-def normalize_rows(rows: list[dict[str, Any]], persist: bool = False) -> list[dict[str, Any]]:
-    changed = False
-    cleaned_rows = []
-
-    for item in rows:
-        if not isinstance(item, dict):
-            changed = True
-            continue
-        clean = dict(item)
-        if "uid" not in clean or not clean.get("uid"):
-            clean["uid"] = uuid.uuid4().hex
-            changed = True
-        if "cliente" not in clean or not clean.get("cliente"):
-            clean["cliente"] = "Geral"
-            changed = True
-        clean["status"] = STATUS_ALIASES.get(str(clean.get("status", "")).strip(), clean.get("status", "Em Andamento"))
-        if clean["status"] not in ALLOWED_STATUS:
-            clean["status"] = "Em Andamento"
-            changed = True
-        cleaned_rows.append(clean)
-
-    if changed and persist:
-        save_raw(cleaned_rows)
-    return cleaned_rows
-
-
 def save_raw(rows: list[dict[str, Any]]) -> None:
+    """Fallback local apenas quando FORCE_POSTGRES=0."""
     if USE_POSTGRES:
         init_db()
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM demandas;")
-                for prioridade, row in enumerate(rows, start=1):
+                for prioridade, row in enumerate(normalize_rows(rows), start=1):
                     cur.execute(
                         """
                         INSERT INTO demandas
@@ -213,22 +262,16 @@ def save_raw(rows: list[dict[str, Any]]) -> None:
                             str(row.get("observacao") or ""),
                             str(row.get("responsavel") or ""),
                             str(row.get("prazo") or ""),
-                            str(row.get("status") or "Em Andamento"),
+                            normalize_status(row.get("status")),
                         ),
                     )
             conn.commit()
         return
 
     if FORCE_POSTGRES:
-        # Em produção, não gravar fallback local. O painel deve usar DATABASE_URL.
         return
 
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if DATA_FILE.exists():
-        try:
-            DATA_FILE.with_suffix(".bak.json").write_text(DATA_FILE.read_text(encoding="utf-8"), encoding="utf-8")
-        except Exception:
-            pass
     tmp = DATA_FILE.with_suffix(".tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
@@ -247,10 +290,6 @@ def with_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    status = str(payload.get("status") or "Em Andamento").strip()
-    status = STATUS_ALIASES.get(status, status)
-    if status not in ALLOWED_STATUS:
-        status = "Em Andamento"
     return {
         "cliente": str(payload.get("cliente") or "Geral").strip() or "Geral",
         "data": str(payload.get("data") or "").strip(),
@@ -258,7 +297,7 @@ def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "observacao": str(payload.get("observacao") or "").strip(),
         "responsavel": str(payload.get("responsavel") or "").strip(),
         "prazo": str(payload.get("prazo") or "").strip(),
-        "status": status,
+        "status": normalize_status(payload.get("status")),
     }
 
 
@@ -296,12 +335,25 @@ def index():
 
 @app.get("/api/health")
 def health():
+    ok_db = False
+    detalhe = None
+    if USE_POSTGRES:
+        try:
+            init_db()
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1;")
+                    ok_db = cur.fetchone()[0] == 1
+        except Exception as exc:
+            detalhe = str(exc)
     return jsonify({
         "ok": True,
         "storage": "postgres" if USE_POSTGRES else "sem_database_url",
         "database_url_configurada": bool(DATABASE_URL),
         "force_postgres": FORCE_POSTGRES,
-        "aviso": "DATABASE_URL ausente. O painel não vai usar JSON local." if not USE_POSTGRES else "Postgres ativo."
+        "postgres_conectado": ok_db,
+        "detalhe": detalhe,
+        "aviso": "DATABASE_URL ausente. O painel não vai usar JSON local." if not USE_POSTGRES else "Postgres ativo.",
     })
 
 
@@ -317,8 +369,38 @@ def criar_demanda():
     payload = request.get_json(silent=True) or {}
     clean = clean_payload(payload)
     if not clean["melhoria"] or not clean["responsavel"]:
-        return jsonify({"error": "Preencha pelo menos Melhoria e Responsável."}), 400
+        return jsonify({"ok": False, "error": "Preencha pelo menos Melhoria e Responsável."}), 400
+
     with LOCK:
+        if USE_POSTGRES:
+            init_db()
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COALESCE(MAX(prioridade), 0) + 1 FROM demandas;")
+                    prioridade = cur.fetchone()[0]
+                    cur.execute(
+                        """
+                        INSERT INTO demandas
+                            (uid, prioridade, cliente, data, melhoria, observacao, responsavel, prazo, status, atualizado_em)
+                        VALUES
+                            (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
+                        """,
+                        (
+                            uuid.uuid4().hex,
+                            prioridade,
+                            clean["cliente"],
+                            clean["data"],
+                            clean["melhoria"],
+                            clean["observacao"],
+                            clean["responsavel"],
+                            clean["prazo"],
+                            clean["status"],
+                        ),
+                    )
+                conn.commit()
+            rows = load_raw()
+            return jsonify({"ok": True, "demandas": with_priority(rows)})
+
         rows = load_raw()
         rows.append({"uid": uuid.uuid4().hex, **clean})
         save_raw(rows)
@@ -330,14 +412,43 @@ def editar_demanda(uid: str):
     payload = request.get_json(silent=True) or {}
     clean = clean_payload(payload)
     if not clean["melhoria"] or not clean["responsavel"]:
-        return jsonify({"error": "Preencha pelo menos Melhoria e Responsável."}), 400
+        return jsonify({"ok": False, "error": "Preencha pelo menos Melhoria e Responsável."}), 400
+
     with LOCK:
         rows = load_raw()
         idx = find_index_by_uid(rows, uid)
         if idx < 0 and uid.isdigit():
             idx = int(uid) - 1
         if idx < 0 or idx >= len(rows):
-            return jsonify({"error": "Demanda não encontrada."}), 404
+            return jsonify({"ok": False, "error": "Demanda não encontrada."}), 404
+        uid_real = str(rows[idx].get("uid"))
+
+        if USE_POSTGRES:
+            init_db()
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE demandas
+                           SET cliente = %s,
+                               data = %s,
+                               melhoria = %s,
+                               observacao = %s,
+                               responsavel = %s,
+                               prazo = %s,
+                               status = %s,
+                               atualizado_em = CURRENT_TIMESTAMP
+                         WHERE uid = %s;
+                        """,
+                        (
+                            clean["cliente"], clean["data"], clean["melhoria"], clean["observacao"],
+                            clean["responsavel"], clean["prazo"], clean["status"], uid_real,
+                        ),
+                    )
+                conn.commit()
+            rows = load_raw()
+            return jsonify({"ok": True, "demandas": with_priority(rows)})
+
         rows[idx].update(clean)
         save_raw(rows)
         return jsonify({"ok": True, "demandas": with_priority(rows)})
@@ -348,14 +459,26 @@ def excluir_demanda(uid: str):
     payload = request.get_json(silent=True) or {}
     user = current_user(payload)
     if user not in DELETE_ALLOWED:
-        return jsonify({"error": "Exclusão liberada apenas para usuários autorizados."}), 403
+        return jsonify({"ok": False, "error": "Exclusão liberada apenas para usuários autorizados."}), 403
+
     with LOCK:
         rows = load_raw()
         idx = find_index_by_uid(rows, uid)
         if idx < 0 and uid.isdigit():
             idx = int(uid) - 1
         if idx < 0 or idx >= len(rows):
-            return jsonify({"error": "Demanda não encontrada."}), 404
+            return jsonify({"ok": False, "error": "Demanda não encontrada."}), 404
+        uid_real = str(rows[idx].get("uid"))
+
+        if USE_POSTGRES:
+            init_db()
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM demandas WHERE uid = %s;", (uid_real,))
+                conn.commit()
+            rows = load_raw()
+            return jsonify({"ok": True, "demandas": with_priority(rows)})
+
         rows.pop(idx)
         save_raw(rows)
         return jsonify({"ok": True, "demandas": with_priority(rows)})
@@ -369,7 +492,21 @@ def reordenar_demandas():
         rows = load_raw()
         by_uid = {str(row.get("uid")): row for row in rows}
         if set(uid_order) != set(by_uid.keys()):
-            return jsonify({"error": "A lista de prioridades ficou desatualizada. Atualize a página e tente novamente."}), 409
+            return jsonify({"ok": False, "error": "A lista de prioridades ficou desatualizada. Atualize a página e tente novamente."}), 409
+
+        if USE_POSTGRES:
+            init_db()
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    for prioridade, uid in enumerate(uid_order, start=1):
+                        cur.execute(
+                            "UPDATE demandas SET prioridade = %s, atualizado_em = CURRENT_TIMESTAMP WHERE uid = %s;",
+                            (prioridade, uid),
+                        )
+                conn.commit()
+            rows = load_raw()
+            return jsonify({"ok": True, "demandas": with_priority(rows)})
+
         rows = [by_uid[uid] for uid in uid_order]
         save_raw(rows)
         return jsonify({"ok": True, "demandas": with_priority(rows)})
