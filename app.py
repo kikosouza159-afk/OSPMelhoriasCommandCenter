@@ -1,32 +1,20 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from __future__ import annotations
+
+import json
 import os
-import sqlite3
+import threading
+import uuid
 from pathlib import Path
-from datetime import datetime
-from functools import wraps
-from urllib.parse import urlparse
+from typing import Any
 
-try:
-    import psycopg2
-    import psycopg2.extras
-except ImportError:
-    psycopg2 = None
-
-try:
-    import pg8000.native
-except ImportError:
-    pg8000 = None
-
-
-APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "data" / "demandas.db"
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-IS_RENDER = bool(os.environ.get("RENDER"))
-USE_POSTGRES = bool(DATABASE_URL)
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "olos-fraseologia-cockpit-v1-9")
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_FILE = DATA_DIR / "demandas.json"
+LOCK = threading.Lock()
 
 USERS = {
     "admin": "olos123",
@@ -36,499 +24,187 @@ USERS = {
     "nubia": "olos123",
     "marcelo": "olos123",
     "hilde": "olos123",
-    "antonio": "olos123"
+    "antonio": "olos123",
 }
+DELETE_ALLOWED = {"admin", "gerber"}
+ALLOWED_STATUS = {"Em Andamento", "Concluído", "Pendentes", "Paralisado"}
 
-STATUS_LIST = ["Backlog", "Em análise", "Em desenvolvimento", "Homologação", "Concluído", "Cancelado"]
-TIPO_LIST = ["Fraseologia", "Fluxo", "Validação CPF", "Oferta", "Encerramento", "Correção de lógica"]
-RISCO_LIST = ["Baixo", "Médio", "Alto", "Crítico"]
-PRIORIDADE_LIST = ["Altíssimo", "Alto", "Médio", "Baixo", "Baixíssimo"]
-
-
-def login_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect(url_for("login"))
-        return fn(*args, **kwargs)
-    return wrapper
-
-
-def db_mode_name():
-    if USE_POSTGRES:
-        if psycopg2 is not None:
-            return "PostgreSQL compartilhado"
-        if pg8000 is not None:
-            return "PostgreSQL compartilhado"
-        return "PostgreSQL sem driver instalado"
-    return "SQLite local"
-
-
-def placeholder():
-    return "%s" if USE_POSTGRES else "?"
-
-
-def normalize_database_url(url):
-    # Render normalmente entrega postgres://. psycopg2 aceita, pg8000 também trabalha com parse manual.
-    return url
-
-
-def get_conn():
-    if USE_POSTGRES:
-        if psycopg2 is not None:
-            return psycopg2.connect(
-                normalize_database_url(DATABASE_URL),
-                cursor_factory=psycopg2.extras.RealDictCursor
-            )
-
-        if pg8000 is not None:
-            parsed = urlparse(DATABASE_URL)
-            database = parsed.path.lstrip("/")
-            return pg8000.native.Connection(
-                user=parsed.username,
-                password=parsed.password,
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                database=database,
-                ssl_context=True
-            )
-
-        raise RuntimeError(
-            "Nenhum driver PostgreSQL instalado. Verifique se requirements.txt contém pg8000 ou psycopg2-binary."
-        )
-
-    DB_PATH.parent.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+DEFAULT_DEMANDAS = [
+    {
+        "cliente": "Sky",
+        "data": "2026-05-20",
+        "melhoria": "Retirar pergunta de nova data após negativa",
+        "observacao": "Cliente informou que só consegue pagar dia 20. Bot não deve perguntar nova data fora da regra.",
+        "responsavel": "Hildebrando",
+        "prazo": "2026-05-22",
+        "status": "Em Andamento",
+    },
+    {
+        "cliente": "Sky",
+        "data": "2026-05-20",
+        "melhoria": "Corrigir fluxo de terceiro desconhecido",
+        "observacao": "Quando a pessoa informar que não conhece o cliente, o fluxo deve validar telefone incorreto ou solicitar outro contato.",
+        "responsavel": "Elvis",
+        "prazo": "2026-05-23",
+        "status": "Pendentes",
+    },
+    {
+        "cliente": "Energisa",
+        "data": "2026-05-21",
+        "melhoria": "Normalizar nomes antes da vocalização",
+        "observacao": "Padronizar nomes com acentuação e pronúncia para melhorar naturalidade e assertividade do atendimento.",
+        "responsavel": "Hildebrando",
+        "prazo": "2026-05-27",
+        "status": "Em Andamento",
+    },
+    {
+        "cliente": "Energisa",
+        "data": "2026-05-21",
+        "melhoria": "Revisar regra de encerramento por WhatsApp",
+        "observacao": "Criar frase de encerramento com orientação objetiva para continuidade do atendimento via WhatsApp.",
+        "responsavel": "Gerber",
+        "prazo": "2026-05-29",
+        "status": "Paralisado",
+    },
+    {
+        "cliente": "Energisa",
+        "data": "2026-05-22",
+        "melhoria": "Homologar frase padrão de encerramento",
+        "observacao": "Aplicar comunicação final: A Energisa agradece. Tenha um bom dia.",
+        "responsavel": "Michele",
+        "prazo": "2026-05-30",
+        "status": "Concluído",
+    },
+]
 
 
-def is_pg8000_connection(conn):
-    return USE_POSTGRES and pg8000 is not None and psycopg2 is None
+def ensure_data_file() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not DATA_FILE.exists():
+        rows = []
+        for item in DEFAULT_DEMANDAS:
+            rows.append({"uid": uuid.uuid4().hex, **item})
+        save_raw(rows)
 
 
-def convert_placeholders_for_pg8000(sql):
-    # pg8000.native usa :p0, :p1... em vez de %s.
-    count = sql.count("%s")
-    for i in range(count):
-        sql = sql.replace("%s", f":p{i}", 1)
-    return sql
+def load_raw() -> list[dict[str, Any]]:
+    ensure_data_file()
+    with DATA_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        return []
+    for item in data:
+        item.setdefault("uid", uuid.uuid4().hex)
+        item.setdefault("cliente", "Geral")
+    return data
 
 
-def params_to_pg8000_dict(params):
-    return {f"p{i}": v for i, v in enumerate(params or [])}
+def save_raw(rows: list[dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = DATA_FILE.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, DATA_FILE)
 
 
-def fetchall(sql, params=None):
-    params = params or []
-    with get_conn() as conn:
-        if is_pg8000_connection(conn):
-            rows = conn.run(convert_placeholders_for_pg8000(sql), **params_to_pg8000_dict(params))
-            columns = [c["name"] for c in conn.columns]
-            return [dict(zip(columns, row)) for row in rows]
-
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        return [dict(r) for r in rows]
+def with_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = []
+    for idx, item in enumerate(rows, start=1):
+        clean = dict(item)
+        clean["id"] = idx
+        result.append(clean)
+    return result
 
 
-def fetchone(sql, params=None):
-    rows = fetchall(sql, params)
-    return rows[0] if rows else None
-
-
-def execute(sql, params=None):
-    params = params or []
-    with get_conn() as conn:
-        if is_pg8000_connection(conn):
-            conn.run(convert_placeholders_for_pg8000(sql), **params_to_pg8000_dict(params))
-            return
-
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        conn.commit()
-
-
-def execute_many(sql, params_list):
-    for params in params_list:
-        execute(sql, params)
-
-
-def column_exists(table_name, column_name):
-    if USE_POSTGRES:
-        row = fetchone(
-            """
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_name = %s
-              AND column_name = %s
-            LIMIT 1
-            """,
-            [table_name, column_name]
-        )
-        return row is not None
-
-    rows = fetchall(f"PRAGMA table_info({table_name})")
-    return any(r["name"] == column_name for r in rows)
-
-
-def score_from_prioridade(nivel):
-    mapa = {
-        "Altíssimo": 5.0,
-        "Alto": 4.0,
-        "Médio": 3.0,
-        "Baixo": 2.0,
-        "Baixíssimo": 1.0
-    }
-    return mapa.get(nivel or "Médio", 3.0)
-
-
-def calc_prioridade(impacto, recorrencia, urgencia, esforco, risco):
-    score = (impacto * 0.30) + (recorrencia * 0.25) + (urgencia * 0.25) + (risco * 0.20) - (esforco * 0.10)
-    score = round(max(score, 0), 2)
-
-    if score >= 4.2:
-        nivel = "Altíssimo"
-    elif score >= 3.4:
-        nivel = "Alto"
-    elif score >= 2.6:
-        nivel = "Médio"
-    elif score >= 1.8:
-        nivel = "Baixo"
-    else:
-        nivel = "Baixíssimo"
-
-    return score, nivel
-
-
-def init_db():
-    id_definition = "SERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
-
-    execute(f"""
-        CREATE TABLE IF NOT EXISTS demandas (
-            id {id_definition},
-            call_id TEXT,
-            previous_asr TEXT,
-            frase_atual TEXT,
-            sugestao TEXT,
-            melhoria TEXT DEFAULT '',
-            obs TEXT,
-            tipo TEXT DEFAULT 'Fraseologia',
-            responsavel TEXT DEFAULT '',
-            status TEXT DEFAULT 'Backlog',
-            impacto INTEGER DEFAULT 3,
-            recorrencia INTEGER DEFAULT 3,
-            urgencia INTEGER DEFAULT 3,
-            esforco INTEGER DEFAULT 2,
-            risco INTEGER DEFAULT 3,
-            score_prioridade REAL DEFAULT 0,
-            nivel_prioridade TEXT DEFAULT 'Médio',
-            data_criacao TEXT,
-            data_prevista TEXT DEFAULT '',
-            data_conclusao TEXT DEFAULT '',
-            prioridade_ordem INTEGER DEFAULT 0,
-            criado_por TEXT DEFAULT ''
-        )
-    """)
-
-    migrations = {
-        "prioridade_ordem": "INTEGER DEFAULT 0",
-        "criado_por": "TEXT DEFAULT ''",
-        "melhoria": "TEXT DEFAULT ''"
+def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    status = str(payload.get("status") or "Em Andamento").strip()
+    if status not in ALLOWED_STATUS:
+        status = "Em Andamento"
+    return {
+        "cliente": str(payload.get("cliente") or "Geral").strip() or "Geral",
+        "data": str(payload.get("data") or "").strip(),
+        "melhoria": str(payload.get("melhoria") or "").strip(),
+        "observacao": str(payload.get("observacao") or "").strip(),
+        "responsavel": str(payload.get("responsavel") or "").strip(),
+        "prazo": str(payload.get("prazo") or "").strip(),
+        "status": status,
     }
 
-    for col, definition in migrations.items():
-        if not column_exists("demandas", col):
-            execute(f"ALTER TABLE demandas ADD COLUMN {col} {definition}")
 
-    execute("""
-        UPDATE demandas
-        SET criado_por = CASE
-            WHEN COALESCE(criado_por, '') = '' THEN 'admin'
-            ELSE criado_por
-        END
-    """)
-
-    execute("""
-        UPDATE demandas
-        SET melhoria = CASE
-            WHEN tipo <> 'Fraseologia' AND COALESCE(melhoria, '') = '' AND COALESCE(sugestao, '') <> '' THEN sugestao
-            ELSE COALESCE(melhoria, '')
-        END
-    """)
-
-    ph = placeholder()
-
-    sem_ordem = fetchall("""
-        SELECT id
-        FROM demandas
-        WHERE COALESCE(prioridade_ordem, 0) = 0
-        ORDER BY score_prioridade DESC, id ASC
-    """)
-
-    for idx, item in enumerate(sem_ordem, start=1):
-        execute(f"UPDATE demandas SET prioridade_ordem = {ph} WHERE id = {ph}", [idx, item["id"]])
-
-    antigas = fetchall("""
-        SELECT id, impacto, recorrencia, urgencia, esforco, risco
-        FROM demandas
-        WHERE nivel_prioridade LIKE 'P%'
-    """)
-
-    for item in antigas:
-        score, nivel = calc_prioridade(
-            int(item["impacto"]), int(item["recorrencia"]), int(item["urgencia"]),
-            int(item["esforco"]), int(item["risco"])
-        )
-        execute(
-            f"UPDATE demandas SET score_prioridade = {ph}, nivel_prioridade = {ph} WHERE id = {ph}",
-            [score, nivel, item["id"]]
-        )
-
-    load_demo_data = os.environ.get("LOAD_DEMO_DATA", "false").lower() == "true"
-    total = fetchone("SELECT COUNT(*) AS qtd FROM demandas")["qtd"]
-
-    if total == 0 and load_demo_data:
-        seed_demo_data()
+def current_user(payload: dict[str, Any]) -> str:
+    return str(payload.get("user") or "").strip().lower()
 
 
-def seed_demo_data():
-    seed = [
-        ("0018c1ff2fb47eb8", "Alô?", "Oi. Aqui é a Isa da Sky, posso falar com THIAGO?", "Olá, aqui é a Isa da Sky. Eu falo com Thiago?", "", "Fraseologia", 4, 4, 4, 1, 3),
-        ("0018c1ff2fb47eb8", "Sim.", "Eu tenho uma informação importante pra você e sei que os dois últimos dígitos do seu CPF são cinquenta e quatro, pra continuar me fala os três primeiros dígitos do seu CPF, por favor?", "Obrigada. Para sua segurança, preciso confirmar uma informação rápida. Os dois últimos dígitos do seu CPF são cinquenta e quatro. Você pode me informar os três primeiros dígitos, por favor?", "", "Validação CPF", 4, 3, 4, 2, 4),
-        ("0018c1ff2fb47eb8", "000.", "Obrigado pela confirmação. Este contato é para informar sobre uma pendência na sua conta e te apoiar na regularização. Gostaria de saber se você já pagou a conta em atraso com a Sky no valor total de cento e noventa e oito reais e cinquenta centavos que venceu em treze de março de dois mil e vinte e seis. Você já efetuou o pagamento?", "Obrigada pela confirmação. Identificamos uma pendência na sua conta Sky, no valor de cento e noventa e oito reais e cinquenta centavos, com vencimento em <Vencimento aa/mm>. Consegue fazer o pagamento desse valor hoje?", "Ofertar o Valor Original", "Oferta", 5, 4, 5, 2, 4),
-    ]
-
-    ph = placeholder()
-    sql = f"""
-        INSERT INTO demandas (
-            call_id, previous_asr, frase_atual, sugestao, melhoria, obs, tipo,
-            impacto, recorrencia, urgencia, esforco, risco,
-            score_prioridade, nivel_prioridade, data_criacao, prioridade_ordem, criado_por
-        ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-    """
-
-    params = []
-    for idx, row in enumerate(seed, start=1):
-        score, nivel = calc_prioridade(row[6], row[7], row[8], row[9], row[10])
-        params.append(row[:4] + ("",) + row[4:6] + row[6:] + (score, nivel, datetime.now().strftime("%Y-%m-%d"), idx, "admin"))
-
-    execute_many(sql, params)
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    erro = ""
-    if request.method == "POST":
-        usuario = request.form.get("usuario", "").strip()
-        senha = request.form.get("senha", "").strip()
-
-        if usuario in USERS and USERS[usuario] == senha:
-            session["logged_in"] = True
-            session["usuario"] = usuario
-            return redirect(url_for("index"))
-
-        erro = "Usuário ou senha inválidos."
-
-    return render_template("login.html", erro=erro)
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-@app.route("/")
-@login_required
+@app.get("/")
 def index():
-    return render_template(
-        "index.html",
-        status_list=STATUS_LIST,
-        tipo_list=TIPO_LIST,
-        risco_list=RISCO_LIST,
-        prioridade_list=PRIORIDADE_LIST
-    )
+    return render_template("index.html")
 
 
-@app.route("/api/db-status")
-@login_required
-def db_status():
-    driver = "sqlite"
-    if USE_POSTGRES:
-        driver = "psycopg2" if psycopg2 is not None else "pg8000" if pg8000 is not None else "sem driver"
-
-    return jsonify({
-        "mode": db_mode_name(),
-        "using_postgres": USE_POSTGRES and driver != "sem driver",
-        "database_url_configured": bool(DATABASE_URL),
-        "driver": driver,
-        "render": IS_RENDER,
-        "warning": "" if USE_POSTGRES and driver != "sem driver" else "ATENÇÃO: usando SQLite local ou PostgreSQL sem driver. No Render, configure DATABASE_URL e garanta que requirements.txt foi instalado."
-    })
-
-
-@app.route("/api/demandas")
-@login_required
+@app.get("/api/demandas")
 def listar_demandas():
-    status = request.args.get("status", "")
-    tipo = request.args.get("tipo", "")
-    busca = request.args.get("busca", "")
-    ph = placeholder()
-
-    where = []
-    params = []
-
-    if status:
-        where.append(f"status = {ph}")
-        params.append(status)
-
-    if tipo:
-        where.append(f"tipo = {ph}")
-        params.append(tipo)
-
-    if busca:
-        where.append(f"(call_id LIKE {ph} OR previous_asr LIKE {ph} OR frase_atual LIKE {ph} OR sugestao LIKE {ph} OR melhoria LIKE {ph} OR obs LIKE {ph})")
-        like = f"%{busca}%"
-        params.extend([like, like, like, like, like, like])
-
-    query = "SELECT * FROM demandas"
-    if where:
-        query += " WHERE " + " AND ".join(where)
-    query += " ORDER BY COALESCE(prioridade_ordem, 999999) ASC, score_prioridade DESC, id DESC"
-
-    rows = fetchall(query, params)
-    return jsonify(rows)
+    with LOCK:
+        rows = load_raw()
+        return jsonify({"demandas": with_priority(rows)})
 
 
-@app.route("/api/resumo")
-@login_required
-def resumo():
-    dados = fetchall("SELECT * FROM demandas")
-
-    total = len(dados)
-    concluidas = sum(1 for d in dados if d["status"] == "Concluído")
-    backlog = sum(1 for d in dados if d["status"] == "Backlog")
-    altissimo = sum(1 for d in dados if d["nivel_prioridade"] == "Altíssimo")
-    score_medio = round(sum(float(d["score_prioridade"] or 0) for d in dados) / total, 2) if total else 0
-
-    por_status = {}
-    por_tipo = {}
-
-    for d in dados:
-        por_status[d["status"]] = por_status.get(d["status"], 0) + 1
-        por_tipo[d["tipo"]] = por_tipo.get(d["tipo"], 0) + 1
-
-    return jsonify({
-        "total": total,
-        "concluidas": concluidas,
-        "backlog": backlog,
-        "altissimo": altissimo,
-        "score_medio": score_medio,
-        "por_status": por_status,
-        "por_tipo": por_tipo
-    })
-
-
-@app.route("/api/demandas", methods=["POST"])
-@login_required
+@app.post("/api/demandas")
 def criar_demanda():
-    data = request.json or {}
-    nivel = data.get("nivel_prioridade", "Médio")
-    score = score_from_prioridade(nivel)
-    ph = placeholder()
-
-    sql = f"""
-        INSERT INTO demandas (
-            call_id, previous_asr, frase_atual, sugestao, melhoria, obs, tipo,
-            responsavel, status, impacto, recorrencia, urgencia, esforco, risco,
-            score_prioridade, nivel_prioridade, data_criacao, data_prevista, prioridade_ordem, criado_por
-        ) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-    """
-
-    params = [
-        data.get("call_id", ""),
-        data.get("previous_asr", ""),
-        data.get("frase_atual", ""),
-        data.get("sugestao", ""),
-        data.get("melhoria", ""),
-        data.get("obs", ""),
-        data.get("tipo", "Fraseologia"),
-        data.get("responsavel", ""),
-        data.get("status", "Backlog"),
-        int(data.get("impacto", 3)),
-        int(data.get("recorrencia", 3)),
-        int(data.get("urgencia", 3)),
-        int(data.get("esforco", 2)),
-        int(data.get("risco", 3)),
-        score,
-        nivel,
-        datetime.now().strftime("%Y-%m-%d"),
-        data.get("data_prevista", ""),
-        int(data.get("prioridade_ordem") or 999999),
-        session.get("usuario", "admin")
-    ]
-
-    execute(sql, params)
-    return jsonify({"ok": True})
+    payload = request.get_json(silent=True) or {}
+    clean = clean_payload(payload)
+    if not clean["melhoria"] or not clean["responsavel"]:
+        return jsonify({"error": "Preencha pelo menos Melhoria e Responsável."}), 400
+    with LOCK:
+        rows = load_raw()
+        rows.append({"uid": uuid.uuid4().hex, **clean})
+        save_raw(rows)
+        return jsonify({"ok": True, "demandas": with_priority(rows)})
 
 
-@app.route("/api/demandas/<int:demanda_id>", methods=["PUT"])
-@login_required
-def atualizar_demanda(demanda_id):
-    data = request.json or {}
-    nivel = data.get("nivel_prioridade", "Médio")
-    score = score_from_prioridade(nivel)
-    ph = placeholder()
-
-    campos = [
-        "call_id", "previous_asr", "frase_atual", "sugestao", "melhoria", "obs", "tipo",
-        "responsavel", "status", "nivel_prioridade", "impacto", "recorrencia", "urgencia",
-        "esforco", "risco", "data_prevista", "data_conclusao", "prioridade_ordem"
-    ]
-
-    update = []
-    params = []
-
-    for c in campos:
-        if c in data:
-            update.append(f"{c} = {ph}")
-            params.append(data[c])
-
-    update.append(f"score_prioridade = {ph}")
-    params.append(score)
-    update.append(f"nivel_prioridade = {ph}")
-    params.append(nivel)
-
-    params.append(demanda_id)
-
-    execute(f"UPDATE demandas SET {', '.join(update)} WHERE id = {ph}", params)
-    return jsonify({"ok": True})
+@app.put("/api/demandas/<int:priority_id>")
+def editar_demanda(priority_id: int):
+    payload = request.get_json(silent=True) or {}
+    clean = clean_payload(payload)
+    if not clean["melhoria"] or not clean["responsavel"]:
+        return jsonify({"error": "Preencha pelo menos Melhoria e Responsável."}), 400
+    with LOCK:
+        rows = load_raw()
+        idx = priority_id - 1
+        if idx < 0 or idx >= len(rows):
+            return jsonify({"error": "Demanda não encontrada."}), 404
+        rows[idx].update(clean)
+        save_raw(rows)
+        return jsonify({"ok": True, "demandas": with_priority(rows)})
 
 
-@app.route("/api/reordenar", methods=["POST"])
-@login_required
+@app.delete("/api/demandas/<int:priority_id>")
+def excluir_demanda(priority_id: int):
+    payload = request.get_json(silent=True) or {}
+    user = current_user(payload)
+    if user not in DELETE_ALLOWED:
+        return jsonify({"error": "Exclusão liberada apenas para Admin e Gerber."}), 403
+    with LOCK:
+        rows = load_raw()
+        idx = priority_id - 1
+        if idx < 0 or idx >= len(rows):
+            return jsonify({"error": "Demanda não encontrada."}), 404
+        rows.pop(idx)
+        save_raw(rows)
+        return jsonify({"ok": True, "demandas": with_priority(rows)})
+
+
+@app.post("/api/reorder")
 def reordenar_demandas():
-    data = request.json or {}
-    ids = data.get("ids", [])
-    ph = placeholder()
+    payload = request.get_json(silent=True) or {}
+    uid_order = [str(x) for x in payload.get("ids", [])]
+    with LOCK:
+        rows = load_raw()
+        by_uid = {str(row.get("uid")): row for row in rows}
+        if set(uid_order) != set(by_uid.keys()):
+            return jsonify({"error": "A lista de prioridades ficou desatualizada. Atualize a página e tente novamente."}), 409
+        rows = [by_uid[uid] for uid in uid_order]
+        save_raw(rows)
+        return jsonify({"ok": True, "demandas": with_priority(rows)})
 
-    for idx, demanda_id in enumerate(ids, start=1):
-        execute(f"UPDATE demandas SET prioridade_ordem = {ph} WHERE id = {ph}", [idx, int(demanda_id)])
-
-    return jsonify({"ok": True})
-
-
-@app.route("/api/demandas/<int:demanda_id>", methods=["DELETE"])
-@login_required
-def deletar_demanda(demanda_id):
-    ph = placeholder()
-    execute(f"DELETE FROM demandas WHERE id = {ph}", [demanda_id])
-    return jsonify({"ok": True})
-
-
-init_db()
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=5000, debug=True)

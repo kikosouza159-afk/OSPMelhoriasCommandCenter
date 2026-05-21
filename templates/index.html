@@ -1,179 +1,403 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cockpit de Demandas | Fraseologia Bot</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Painel Executivo de Demandas</title>
+<style>
+:root{
+  --bg:#061225; --panel:rgba(8,26,50,.86); --panel2:rgba(12,36,68,.72);
+  --stroke:rgba(83,182,255,.24); --text:#f4f8ff; --muted:#9eb6ce;
+  --blue:#009DFF; --orange:#FF6B00; --green:#63e6be; --yellow:#ffd166; --red:#ff7b7b;
+  --shadow:0 20px 60px rgba(0,0,0,.34);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh; color:var(--text); font-family:Segoe UI,Arial,sans-serif;
+  background:#061225;
+  padding:22px;
+  overflow-x:hidden;
+}
+.animated-bg{position:fixed;inset:0;z-index:0;overflow:hidden;background:
+  radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(0,157,255,.28),transparent 24%),
+  radial-gradient(circle at 14% 18%,rgba(0,157,255,.22),transparent 30%),
+  radial-gradient(circle at 88% 10%,rgba(255,107,0,.20),transparent 28%),
+  linear-gradient(135deg,#061225 0%,#092142 52%,#061225 100%);}
+.animated-bg:before{content:"";position:absolute;inset:-15%;background:
+  linear-gradient(115deg,transparent 0 42%,rgba(0,157,255,.08) 48%,transparent 54% 100%),
+  linear-gradient(65deg,transparent 0 48%,rgba(255,107,0,.075) 52%,transparent 58% 100%);
+  animation:aurora 12s ease-in-out infinite alternate;filter:blur(1px)}
+.animated-bg:after{content:"";position:absolute;inset:0;opacity:.45;background-image:
+  linear-gradient(rgba(0,157,255,.08) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,107,0,.055) 1px,transparent 1px);background-size:42px 42px;animation:grid 20s linear infinite}
+#networkCanvas{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.82}
+.orb{position:absolute;border-radius:50%;filter:blur(16px);opacity:.45;mix-blend-mode:screen;animation:floatOrb 14s ease-in-out infinite alternate}
+.orb.one{width:260px;height:260px;left:7%;top:68%;background:rgba(0,157,255,.28)}
+.orb.two{width:220px;height:220px;right:9%;top:22%;background:rgba(255,107,0,.25);animation-delay:-4s}
+.orb.three{width:180px;height:180px;left:48%;top:8%;background:rgba(99,230,190,.18);animation-delay:-7s}
+@keyframes grid{to{transform:translate(42px,42px)}}
+@keyframes aurora{from{transform:translate3d(-3%,2%,0) rotate(.5deg)}to{transform:translate3d(4%,-2%,0) rotate(-.5deg)}}
+@keyframes floatOrb{from{transform:translate3d(0,0,0) scale(.96)}to{transform:translate3d(42px,-32px,0) scale(1.08)}}
+.shell{position:relative;z-index:1;max-width:1580px;margin:0 auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:14px}
+.eyebrow{margin:0 0 6px;color:var(--orange);font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+h1{margin:0;font-size:32px;letter-spacing:-.03em;line-height:1.05}.subtitle{margin:6px 0 0;color:var(--muted);font-size:13px}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.user-pill{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:999px;padding:8px 10px;color:var(--muted);font-size:12px}
+select,input,textarea{width:100%;border:1px solid rgba(83,182,255,.22);border-radius:12px;background:rgba(4,14,29,.74);color:var(--text);padding:10px 11px;outline:none;font-family:inherit}
+textarea{min-height:84px;resize:vertical}label{display:block;color:var(--muted);font-size:12px;margin:0 0 6px}
+button{cursor:pointer;border:1px solid var(--stroke);border-radius:12px;padding:10px 13px;color:var(--text);font-weight:800;background:rgba(255,255,255,.06);transition:.18s ease}
+button:hover{transform:translateY(-1px);border-color:rgba(255,107,0,.5)}.primary{background:linear-gradient(135deg,var(--blue),var(--orange));color:#061225;border:0}.danger{border-color:rgba(255,123,123,.4);color:#ffd0d0}.ghost{background:rgba(255,255,255,.04)}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:12px 0}.card{background:var(--panel);border:1px solid var(--stroke);border-radius:18px;padding:13px;box-shadow:var(--shadow);position:relative;overflow:hidden;cursor:pointer;transition:.2s ease;text-align:left}.card:hover{transform:translateY(-2px);border-color:rgba(255,107,0,.52);box-shadow:0 18px 55px rgba(0,0,0,.36),0 0 0 1px rgba(255,107,0,.12)}.card.active{border-color:rgba(0,157,255,.72);background:linear-gradient(135deg,rgba(0,157,255,.20),rgba(8,26,50,.88) 60%);box-shadow:0 18px 55px rgba(0,0,0,.34),0 0 24px rgba(0,157,255,.13)}.card:after{content:"";position:absolute;right:-18px;top:-18px;width:58px;height:58px;border-radius:50%;background:rgba(0,157,255,.13)}.card span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.card strong{font-size:26px;letter-spacing:-.03em}
+.panel{background:var(--panel);border:1px solid var(--stroke);border-radius:22px;padding:16px;box-shadow:var(--shadow);backdrop-filter:blur(12px)}
+.toolbar{display:grid;grid-template-columns:1.15fr .72fr .7fr .7fr .62fr auto;gap:10px;align-items:end;margin:12px 0 14px}.toolbar .field{min-width:0}
+.status-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}.tab{font-size:12px;padding:9px 11px;border-radius:999px;color:var(--muted)}.tab.active{color:var(--text);background:linear-gradient(135deg,rgba(0,157,255,.20),rgba(255,107,0,.17));border-color:rgba(255,107,0,.42)}
+.table-wrap{border:1px solid var(--stroke);border-radius:16px;overflow:auto;max-height:63vh}table{width:100%;border-collapse:collapse;min-width:1200px}th,td{padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.075);font-size:12.5px;vertical-align:top}th{position:sticky;top:0;background:#10294d;color:#8fd2ff;text-align:left;font-size:11px;z-index:2}tr{background:rgba(255,255,255,.015)}tbody tr:hover{background:rgba(0,157,255,.075)}tbody tr.dragging{opacity:.45}.drag{font-size:18px;color:var(--orange);font-weight:900;text-align:center;cursor:grab}.pid{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:29px;border-radius:10px;background:linear-gradient(135deg,rgba(0,157,255,.22),rgba(255,107,0,.18));border:1px solid rgba(255,255,255,.13);font-weight:900}.title-cell{font-weight:800;color:#fff}.obs{color:#cfe0f4;line-height:1.34;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.client-chip{display:inline-flex;align-items:center;border-radius:999px;padding:6px 9px;background:rgba(0,157,255,.10);border:1px solid rgba(83,182,255,.28);color:#d9efff;font-size:11px;font-weight:900;white-space:nowrap}.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid var(--stroke);padding:6px 9px;font-size:11px;font-weight:900;white-space:nowrap}.s-andamento{color:#bfe7ff;border-color:rgba(0,157,255,.4);background:rgba(0,157,255,.10)}.s-concluido{color:#b8ffe8;border-color:rgba(99,230,190,.62);background:rgba(99,230,190,.18);box-shadow:0 0 0 1px rgba(99,230,190,.10),0 0 18px rgba(99,230,190,.12)}.s-pendente{color:#ffe7a8;border-color:rgba(255,209,102,.35);background:rgba(255,209,102,.10)}.s-paralisado{color:#ffc4c4;border-color:rgba(255,123,123,.35);background:rgba(255,123,123,.10)}
+tbody tr.row-concluido{background:linear-gradient(90deg,rgba(99,230,190,.16),rgba(99,230,190,.045) 40%,rgba(255,255,255,.015));box-shadow:inset 4px 0 0 rgba(99,230,190,.88)}
+tbody tr.row-concluido:hover{background:linear-gradient(90deg,rgba(99,230,190,.22),rgba(99,230,190,.075) 42%,rgba(0,157,255,.055))}.row-concluido .pid{background:linear-gradient(135deg,rgba(99,230,190,.28),rgba(0,157,255,.12));border-color:rgba(99,230,190,.42);color:#d9fff3}.row-concluido .title-cell{color:#dffef4}.row-concluido .drag{color:var(--green)}
+.card.concluido-card{border-color:rgba(99,230,190,.42);background:linear-gradient(135deg,rgba(99,230,190,.16),rgba(8,26,50,.86) 58%)}.card.concluido-card.active{border-color:rgba(99,230,190,.78);background:linear-gradient(135deg,rgba(99,230,190,.26),rgba(8,26,50,.88) 58%);box-shadow:0 18px 55px rgba(0,0,0,.34),0 0 28px rgba(99,230,190,.16)}.card.concluido-card:after{background:rgba(99,230,190,.24)}.card.concluido-card strong{color:#b8ffe8}.tab.tab-concluido{border-color:rgba(99,230,190,.34);color:#b8ffe8}.tab.tab-concluido.active{background:linear-gradient(135deg,rgba(99,230,190,.25),rgba(0,157,255,.09));border-color:rgba(99,230,190,.58);color:#e5fff7}
+.overdue{color:#ffc4c4;font-weight:900}.soon{color:#ffe7a8;font-weight:900}.row-actions{display:flex;gap:6px;flex-wrap:wrap}.mini{padding:7px 9px;font-size:11px;border-radius:10px}.empty{padding:28px;text-align:center;color:var(--muted)}
+.modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.58);z-index:10;padding:18px}.modal.open{display:grid}.modal-card{width:min(760px,100%);background:#081a32;border:1px solid var(--stroke);border-radius:24px;padding:18px;box-shadow:0 25px 85px rgba(0,0,0,.55)}.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.modal-head h2{margin:0;font-size:22px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-grid .wide{grid-column:1/-1}.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.hint{font-size:12px;color:var(--muted);margin-top:8px}.toast{position:fixed;right:20px;bottom:20px;background:#09213f;border:1px solid rgba(255,107,0,.38);border-radius:14px;padding:12px 14px;color:#fff;box-shadow:var(--shadow);opacity:0;transform:translateY(12px);transition:.25s ease;z-index:20}.toast.show{opacity:1;transform:translateY(0)}
+th:nth-child(1),td:nth-child(1){width:42px;text-align:center}th:nth-child(2),td:nth-child(2){width:94px}th:nth-child(3),td:nth-child(3){width:94px}th:nth-child(4),td:nth-child(4){width:250px}th:nth-child(5),td:nth-child(5){width:330px}th:nth-child(6),td:nth-child(6){width:130px}th:nth-child(7),td:nth-child(7){width:100px}th:nth-child(8),td:nth-child(8){width:135px}th:nth-child(9),td:nth-child(9){width:135px}
+
+.login-screen{position:fixed;inset:0;z-index:30;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(0,157,255,.18),transparent 24%),rgba(3,10,22,.22);backdrop-filter:blur(3px)}
+.login-card{width:min(440px,100%);background:linear-gradient(145deg,rgba(8,26,50,.94),rgba(10,35,66,.86));border:1px solid rgba(83,182,255,.32);border-radius:26px;padding:24px;box-shadow:0 30px 95px rgba(0,0,0,.62),0 0 44px rgba(0,157,255,.12);position:relative;overflow:hidden;animation:loginFloat 7s ease-in-out infinite alternate}
+.login-card:before{content:"";position:absolute;inset:-2px;background:radial-gradient(circle at 18% 12%,rgba(0,157,255,.22),transparent 32%),radial-gradient(circle at 88% 0%,rgba(255,107,0,.18),transparent 30%);pointer-events:none}
+.login-card>*{position:relative}.login-logo{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),var(--orange));color:#061225;font-weight:1000;font-size:22px;margin-bottom:14px;box-shadow:0 0 28px rgba(0,157,255,.24)}
+.login-card h2{margin:0 0 6px;font-size:28px;letter-spacing:-.03em}.login-card p{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.45}.login-form{display:grid;gap:12px}.login-error{min-height:18px;color:#ffc4c4;font-size:12px;font-weight:800}.login-foot{margin-top:12px;color:var(--muted);font-size:11px;line-height:1.4}.hidden{display:none!important}.user-pill strong{color:#fff}.role-admin{color:#b8ffe8}.role-user{color:#8fd2ff}
+
+th:nth-child(1),td:nth-child(1){width:42px;text-align:center}th:nth-child(2),td:nth-child(2){width:94px}th:nth-child(3),td:nth-child(3){width:120px}th:nth-child(4),td:nth-child(4){width:94px}th:nth-child(5),td:nth-child(5){width:250px}th:nth-child(6),td:nth-child(6){width:330px}th:nth-child(7),td:nth-child(7){width:130px}th:nth-child(8),td:nth-child(8){width:100px}th:nth-child(9),td:nth-child(9){width:135px}th:nth-child(10),td:nth-child(10){width:135px}
+@keyframes loginFloat{from{transform:translateY(0)}to{transform:translateY(-8px)}}
+@media(max-width:980px){body{padding:14px}.topbar{align-items:flex-start;flex-direction:column}.cards{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}h1{font-size:27px}}
+</style>
 </head>
 <body>
-  <div class="bg-grid"></div>
-  <div class="tech-lines"></div>
-  <div class="energy-rain">
-    <span></span><span></span><span></span><span></span><span></span>
-    <span></span><span></span><span></span><span></span><span></span>
+<div class="animated-bg" id="animatedBg"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span></div>
+<canvas id="networkCanvas"></canvas>
+
+<section class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">OSP</div>
+    <p class="eyebrow">Acesso restrito</p>
+    <h2>Login da Esteira</h2>
+    <p>Entre com seu usuário para registrar, editar e acompanhar as demandas. Exclusão fica liberada somente para Admin e Gerber.</p>
+    <div class="login-form">
+      <div><label>Usuário</label><input id="loginUser" autocomplete="username" placeholder="ex: admin" onkeydown="loginKey(event)"></div>
+      <div><label>Senha</label><input id="loginPass" type="password" autocomplete="current-password" placeholder="Digite sua senha" onkeydown="loginKey(event)"></div>
+      <div class="login-error" id="loginError"></div>
+      <button class="primary" onclick="login()">Entrar</button>
+    </div>
+    <div class="login-foot">Usuários liberados: admin, gerber, elvis, michele, nubia, marcelo, hilde e antonio.</div>
   </div>
-  <div class="orb orb-a"></div>
-  <div class="orb orb-b"></div>
-  <div class="orb orb-c"></div>
+</section>
 
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">SKY · Negocie Online · Gestão de Melhorias</p>
-        <h1>Cockpit de Fraseologia & Fluxo</h1>
-        <p class="subtitle">Controle das solicitações ao desenvolvimento com score de prioridade, status, responsáveis e visão executiva das melhorias.</p>
-      </div>
-      <div class="hero-actions">
-        <a class="ghost link-button" href="/logout">Sair</a>
-        <button class="primary" onclick="abrirModal()">+ Nova demanda</button>
-      </div>
-    </section>
+<main class="shell hidden" id="appShell">
+  <section class="topbar">
+    <div>
+      <p class="eyebrow">Gestão executiva de melhorias</p>
+      <h1>Esteira Resumida de Demandas</h1>
+      <p class="subtitle">Priorize, arraste, acompanhe prazo e mantenha o histórico vivo sem transformar o painel em um polvo de planilha.</p>
+    </div>
+    <div class="actions">
+      <div class="user-pill">Usuário <strong id="usuarioLogado">-</strong> <span id="perfilUsuario" class="role-user">USUÁRIO</span></div>
+      <button class="ghost" onclick="logout()">Sair</button>
+      <button class="ghost" onclick="exportarCSV()">Exportar CSV</button>
+      <button class="primary" onclick="abrirModal()">+ Nova demanda</button>
+    </div>
+  </section>
 
-    
-    <section id="dbBanner" class="db-banner" style="display:none;">
-      <strong id="dbMode">Banco</strong>
-      <span id="dbWarning"></span>
-    </section>
+  <section class="cards">
+    <article class="card" data-status-card="Todos" onclick="setStatus('Todos')" title="Filtrar por todos"><span>Total</span><strong id="kTotal">0</strong></article>
+    <article class="card" data-status-card="Em Andamento" onclick="setStatus('Em Andamento')" title="Filtrar por Em Andamento"><span>Em Andamento</span><strong id="kAndamento">0</strong></article>
+    <article class="card concluido-card" data-status-card="Concluído" onclick="setStatus('Concluído')" title="Filtrar por Concluído"><span>Concluído</span><strong id="kConcluido">0</strong></article>
+    <article class="card" data-status-card="Pendentes" onclick="setStatus('Pendentes')" title="Filtrar por Pendentes"><span>Pendentes</span><strong id="kPendente">0</strong></article>
+    <article class="card" data-status-card="Paralisado" onclick="setStatus('Paralisado')" title="Filtrar por Paralisado"><span>Paralisado</span><strong id="kParalisado">0</strong></article>
+  </section>
 
-    <section class="cards">
-      <article class="card"><span>Total</span><strong id="kpiTotal">0</strong><small>Demandas mapeadas</small></article>
-      <article class="card"><span>Altíssimo</span><strong id="kpiAltissimo">0</strong><small>Maior peso operacional</small></article>
-      <article class="card"><span>Backlog</span><strong id="kpiBacklog">0</strong><small>Aguardando atuação</small></article>
-      <article class="card"><span>Concluídas</span><strong id="kpiConcluidas">0</strong><small>Implementadas ou homologadas</small></article>
-      <article class="card"><span>Score médio</span><strong id="kpiScore">0</strong><small>Prioridade ponderada</small></article>
-    </section>
+  <section class="panel">
+    <div class="toolbar">
+      <div class="field"><label>Buscar por cliente, melhoria, observação ou responsável</label><input id="busca" placeholder="Digite para filtrar..." oninput="render()"></div>
+      <div class="field"><label>Cliente</label><select id="fCliente" onchange="render()"><option value="Todos">Todos</option></select></div>
+      <div class="field"><label>Status</label><select id="fStatus" onchange="render()"><option value="Todos">Todos</option><option>Em Andamento</option><option>Concluído</option><option>Pendentes</option><option>Paralisado</option></select></div>
+      <div class="field"><label>Responsável</label><input id="fResponsavel" placeholder="Ex: Michele" oninput="render()"></div>
+      <div class="field"><label>Visão</label><select id="densidade" onchange="document.body.classList.toggle('compact',this.value==='compacto')"><option value="normal">Normal</option><option value="compacto">Compacta</option></select></div>
+      <button onclick="limparFiltros()">Limpar</button>
+    </div>
 
-    <section class="filters panel">
-      <div>
-        <label>Status</label>
-        <select id="fStatus" onchange="carregarTudo()">
-          <option value="">Todos</option>
-          {% for s in status_list %}<option value="{{s}}">{{s}}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label>Tipo</label>
-        <select id="fTipo" onchange="carregarTudo()">
-          <option value="">Todos</option>
-          {% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="grow">
-        <label>Busca</label>
-        <input id="fBusca" placeholder="Buscar por CallId, frase, sugestão ou observação..." oninput="debouncedLoad()" />
-      </div>
-    </section>
+    <div class="status-tabs" id="tabs"></div>
 
-    <section class="grid-two">
-      <article class="panel chart-panel">
-        <h2>Demandas por status</h2>
-        <canvas id="chartStatus"></canvas>
-      </article>
-      <article class="panel chart-panel">
-        <h2>Demandas por tipo</h2>
-        <canvas id="chartTipo"></canvas>
-      </article>
-    </section>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Id Prioridade</th><th>Cliente</th><th>Data</th><th>Melhoria</th><th>Observação</th><th>Responsável</th><th>Prazo</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="hint">Regra aplicada: nova demanda entra no último ID. Ao arrastar uma linha, a ordem é recalculada de 1 até N automaticamente. Dados salvos no servidor para todos os usuários visualizarem a mesma esteira, separados por cliente quando necessário.</div>
+  </section>
+</main>
 
-    <section class="panel">
-      <div class="section-head">
-        <div>
-          <h2>Esteira de demandas</h2>
-          <p>Use os cards de status como filtro rápido para a lista abaixo. Arraste as linhas para alterar a ordem de prioridade. ⚡</p>
-        </div>
-      </div>
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="modalTitle">Nova demanda</h2><button onclick="fecharModal()">Fechar</button></div>
+    <input type="hidden" id="editId">
+    <div class="form-grid">
+      <div><label>Cliente</label><input id="cliente" list="clientesList" placeholder="Ex: Sky, Energisa, Verisure"></div>
+      <div><label>Data da inclusão</label><input id="data" type="date"></div>
+      <div><label>Prazo de finalização</label><input id="prazo" type="date"></div>
+      <div class="wide"><label>Melhoria</label><input id="melhoria" placeholder="Título resumido da demanda"></div>
+      <div class="wide"><label>Observação</label><textarea id="observacao" placeholder="Detalhe o contexto, regra ou evidência da melhoria"></textarea></div>
+      <div><label>Responsável</label><input id="responsavel" placeholder="Autor responsável"></div>
+      <div><label>Status</label><select id="status"><option>Em Andamento</option><option>Concluído</option><option>Pendentes</option><option>Paralisado</option></select></div>
+    </div>
+    <div class="modal-foot"><button onclick="fecharModal()">Cancelar</button><button class="primary" onclick="salvarDemanda()">Salvar</button></div>
+  </div>
+</div>
+<datalist id="clientesList"></datalist>
+<div class="toast" id="toast"></div>
 
-      <div class="status-strip" id="statusCards">
-        <button type="button" class="status-filter-card active" data-status="" onclick="aplicarFiltroStatusCard('')">
-          <span>Todos</span>
-          <strong id="statusCountAll">0</strong>
-        </button>
+<script>
+const USERS = {
+  "admin": "olos123",
+  "gerber": "olos123",
+  "elvis": "olos123",
+  "michele": "olos123",
+  "nubia": "olos123",
+  "marcelo": "olos123",
+  "hilde": "olos123",
+  "antonio": "olos123"
+};
+const DELETE_ALLOWED = ["admin","gerber"];
+let currentUser = localStorage.getItem('esteira_current_user') || '';
+let demandas = [];
+let dragIndex = null;
 
-        {% for s in status_list %}
-        <button type="button" class="status-filter-card" data-status="{{ s }}" onclick="aplicarFiltroStatusCard('{{ s }}')">
-          <span>{{ s }}</span>
-          <strong>0</strong>
-        </button>
-        {% endfor %}
-      </div>
+function normalizeUser(v){ return String(v||'').trim().toLowerCase(); }
+function canDelete(){ return DELETE_ALLOWED.includes(normalizeUser(currentUser)); }
+function roleLabel(){ return canDelete() ? 'ADMIN' : 'USUÁRIO'; }
+function loginKey(e){ if(e.key==='Enter') login(); }
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Arrastar</th>
-              <th>Id Prioridade</th>
-              <th>Classificação</th>
-              <th>Status</th>
-              <th>Tipo</th>
-              <th>CallId</th>
-              <th>Frase atual</th>
-              <th>Sugestão / Melhoria</th>
-              <th>Obs</th>
-              <th>Inserido por</th>
-              <th>Resp.</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+async function api(url, options={}){
+  const res = await fetch(url, {
+    headers:{'Content-Type':'application/json'},
+    ...options
+  });
+  const txt = await res.text();
+  let data = {};
+  try { data = txt ? JSON.parse(txt) : {}; } catch { data = {error:txt}; }
+  if(!res.ok) throw new Error(data.error || 'Falha na comunicação com o servidor.');
+  return data;
+}
 
-  <dialog id="modal">
-    <form method="dialog" class="modal-card" onsubmit="salvarDemanda(event)">
-      <div class="modal-head">
-        <h2 id="modalTitle">Nova demanda</h2>
-        <button type="button" class="ghost" onclick="fecharModal()">×</button>
-      </div>
+async function loadDemandas(){
+  try{
+    const data = await api('/api/demandas');
+    demandas = data.demandas || [];
+    render();
+  }catch(err){
+    toastMsg('Não consegui carregar as demandas do servidor.');
+    console.error(err);
+  }
+}
 
-      <input type="hidden" id="id" />
+function login(){
+  const u=normalizeUser(document.getElementById('loginUser').value);
+  const pass=document.getElementById('loginPass').value;
+  if(USERS[u] && USERS[u]===pass){
+    currentUser=u;
+    localStorage.setItem('esteira_current_user',u);
+    document.getElementById('loginPass').value='';
+    document.getElementById('loginError').textContent='';
+    applyAuth();
+    toastMsg('Login realizado com sucesso.');
+    return;
+  }
+  document.getElementById('loginError').textContent='Usuário ou senha inválidos.';
+}
+function logout(){ localStorage.removeItem('esteira_current_user'); currentUser=''; applyAuth(); }
+function applyAuth(){
+  const logged=!!currentUser && USERS[currentUser];
+  document.getElementById('loginScreen').classList.toggle('hidden', logged);
+  document.getElementById('appShell').classList.toggle('hidden', !logged);
+  if(logged){
+    document.getElementById('usuarioLogado').textContent=currentUser.toUpperCase();
+    const perfil=document.getElementById('perfilUsuario');
+    perfil.textContent=roleLabel();
+    perfil.className=canDelete()?'role-admin':'role-user';
+    loadDemandas();
+  }
+}
 
-      <div class="form-grid form-grid-objetivo">
-        <div><label>CallIdtelecom</label><input id="call_id" /></div>
-        <div><label>Tipo</label><select id="tipo" onchange="toggleFraseologiaFields()">{% for t in tipo_list %}<option value="{{t}}">{{t}}</option>{% endfor %}</select></div>
-        <div><label>Status</label><select id="status">{% for s in status_list %}<option value="{{s}}">{{s}}</option>{% endfor %}</select></div>
-        <div><label>Classificação</label><select id="nivel_prioridade">{% for p in prioridade_list %}<option value="{{p}}">{{p}}</option>{% endfor %}</select></div>
-        <div><label>Id Prioridade</label><input id="prioridade_ordem" type="number" min="1" placeholder="Ex: 1" /></div>
-        <div><label>Responsável</label><input id="responsavel" placeholder="Dev, squad ou pessoa" /></div>
-        <div><label>Data prevista</label><input id="data_prevista" type="date" /></div>
-        <div><label>Inserido por</label><input id="criado_por_view" value="{{ session.get('usuario', 'admin') }}" disabled /></div>
-      </div>
+function fmtDate(v){ if(!v) return ''; const [y,m,d]=v.split('-'); return `${d}/${m}/${y}`; }
+function today(){ return new Date().toISOString().slice(0,10); }
+function statusClass(s){ return {'Em Andamento':'s-andamento','Concluído':'s-concluido','Pendentes':'s-pendente','Paralisado':'s-paralisado'}[s] || ''; }
+function prazoClass(prazo,status){ if(status==='Concluído' || !prazo) return ''; const p = new Date(prazo+'T00:00:00'); const now = new Date(); now.setHours(0,0,0,0); const diff=(p-now)/86400000; if(diff<0) return 'overdue'; if(diff<=2) return 'soon'; return ''; }
+function filtered(){
+  const b=document.getElementById('busca').value.toLowerCase().trim();
+  const fs=document.getElementById('fStatus').value;
+  const fc=document.getElementById('fCliente').value;
+  const fr=document.getElementById('fResponsavel').value.toLowerCase().trim();
+  return demandas.filter(d =>
+    (fs==='Todos' || d.status===fs) &&
+    (fc==='Todos' || (d.cliente||'Geral')===fc) &&
+    (!fr || String(d.responsavel||'').toLowerCase().includes(fr)) &&
+    (!b || [d.cliente,d.melhoria,d.observacao,d.responsavel,d.status].join(' ').toLowerCase().includes(b))
+  );
+}
+function clientesUnicos(){ return [...new Set(demandas.map(d=>d.cliente||'Geral'))].sort((a,b)=>a.localeCompare(b,'pt-BR')); }
+function refreshClienteOptions(){
+  const sel=document.getElementById('fCliente');
+  const atual=sel.value || 'Todos';
+  const clientes=clientesUnicos();
+  sel.innerHTML='<option value="Todos">Todos</option>'+clientes.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  sel.value=[...clientes,'Todos'].includes(atual)?atual:'Todos';
+  document.getElementById('clientesList').innerHTML=clientes.map(c=>`<option value="${escapeHtml(c)}"></option>`).join('');
+}
+function baseFilteredSemStatus(){
+  const b=document.getElementById('busca').value.toLowerCase().trim();
+  const fc=document.getElementById('fCliente').value;
+  const fr=document.getElementById('fResponsavel').value.toLowerCase().trim();
+  return demandas.filter(d =>
+    (fc==='Todos' || (d.cliente||'Geral')===fc) &&
+    (!fr || String(d.responsavel||'').toLowerCase().includes(fr)) &&
+    (!b || [d.cliente,d.melhoria,d.observacao,d.responsavel,d.status].join(' ').toLowerCase().includes(b))
+  );
+}
+function renderTabs(){
+  const statuses=['Todos','Em Andamento','Concluído','Pendentes','Paralisado'];
+  const fs=document.getElementById('fStatus').value;
+  const base=baseFilteredSemStatus();
+  document.getElementById('tabs').innerHTML=statuses.map(s=>{
+    const qtd=s==='Todos'?base.length:base.filter(d=>d.status===s).length;
+    return `<button class="tab ${s==='Concluído'?'tab-concluido':''} ${fs===s?'active':''}" onclick="setStatus('${s}')">${s} · ${qtd}</button>`;
+  }).join('');
+}
+function renderKpis(){
+  refreshClienteOptions();
+  const base=baseFilteredSemStatus();
+  kTotal.textContent=base.length;
+  kAndamento.textContent=base.filter(d=>d.status==='Em Andamento').length;
+  kConcluido.textContent=base.filter(d=>d.status==='Concluído').length;
+  kPendente.textContent=base.filter(d=>d.status==='Pendentes').length;
+  kParalisado.textContent=base.filter(d=>d.status==='Paralisado').length;
+  const fs=document.getElementById('fStatus')?.value || 'Todos';
+  document.querySelectorAll('[data-status-card]').forEach(card=>{
+    card.classList.toggle('active', card.dataset.statusCard===fs);
+  });
+}
+function render(){
+  renderKpis(); renderTabs();
+  const data=filtered(); const tbody=document.getElementById('tbody');
+  if(!data.length){ tbody.innerHTML=`<tr><td colspan="10" class="empty">Nenhuma demanda encontrada para os filtros aplicados.</td></tr>`; return; }
+  tbody.innerHTML=data.map(d=>{
+    const globalIndex=demandas.findIndex(x=>x.id===d.id);
+    return `<tr class="${d.status==='Concluído'?'row-concluido':''}" draggable="true" ondragstart="dragStart(event,${globalIndex})" ondragover="dragOver(event)" ondrop="dropRow(event,${globalIndex})" ondragend="dragEnd(event)">
+      <td class="drag">⋮⋮</td>
+      <td><span class="pid">${d.id}</span></td>
+      <td><span class="client-chip">${escapeHtml(d.cliente||'Geral')}</span></td>
+      <td>${fmtDate(d.data)}</td>
+      <td class="title-cell">${escapeHtml(d.melhoria)}</td>
+      <td><div class="obs">${escapeHtml(d.observacao)}</div></td>
+      <td>${escapeHtml(d.responsavel)}</td>
+      <td class="${prazoClass(d.prazo,d.status)}">${fmtDate(d.prazo)}</td>
+      <td><span class="badge ${statusClass(d.status)}">${d.status}</span></td>
+      <td><div class="row-actions"><button class="mini" onclick="editar(${d.id})">Editar</button>${canDelete()?`<button class="mini danger" onclick="excluir(${d.id})">Excluir</button>`:''}</div></td>
+    </tr>`;
+  }).join('');
+}
+function setStatus(s){ document.getElementById('fStatus').value=s; render(); }
+function limparFiltros(){ busca.value=''; fCliente.value='Todos'; fStatus.value='Todos'; fResponsavel.value=''; render(); }
+function abrirModal(){
+  editId.value=''; modalTitle.textContent='Nova demanda'; cliente.value=(fCliente.value && fCliente.value!=='Todos') ? fCliente.value : ''; data.value=today(); prazo.value=''; melhoria.value=''; observacao.value=''; responsavel.value=currentUser ? currentUser.charAt(0).toUpperCase()+currentUser.slice(1) : ''; status.value='Em Andamento'; modal.classList.add('open');
+}
+function fecharModal(){ modal.classList.remove('open'); }
+async function salvarDemanda(){
+  if(!melhoria.value.trim() || !responsavel.value.trim()){ toastMsg('Preencha pelo menos Melhoria e Responsável.'); return; }
+  const payload={cliente:cliente.value.trim()||'Geral',data:data.value||today(),melhoria:melhoria.value.trim(),observacao:observacao.value.trim(),responsavel:responsavel.value.trim(),prazo:prazo.value,status:status.value,user:currentUser};
+  try{
+    if(editId.value){ await api(`/api/demandas/${editId.value}`,{method:'PUT',body:JSON.stringify(payload)}); }
+    else { await api('/api/demandas',{method:'POST',body:JSON.stringify(payload)}); }
+    fecharModal(); await loadDemandas(); toastMsg('Demanda salva e publicada para todos.');
+  }catch(err){ toastMsg(err.message); }
+}
+function editar(id){ const d=demandas.find(x=>x.id===id); if(!d) return; editId.value=d.id; modalTitle.textContent=`Editar demanda #${d.id}`; cliente.value=d.cliente||'Geral'; data.value=d.data; prazo.value=d.prazo; melhoria.value=d.melhoria; observacao.value=d.observacao; responsavel.value=d.responsavel; status.value=d.status; modal.classList.add('open'); }
+async function excluir(id){
+  if(!canDelete()){ toastMsg('Exclusão liberada apenas para Admin e Gerber.'); return; }
+  if(!confirm('Excluir esta demanda?')) return;
+  try{
+    await api(`/api/demandas/${id}`,{method:'DELETE',body:JSON.stringify({user:currentUser})});
+    await loadDemandas(); toastMsg('Demanda excluída e prioridades recalculadas.');
+  }catch(err){ toastMsg(err.message); }
+}
+function dragStart(e,index){ dragIndex=index; e.currentTarget.classList.add('dragging'); }
+function dragOver(e){ e.preventDefault(); }
+async function dropRow(e,targetIndex){
+  e.preventDefault();
+  if(dragIndex===null || dragIndex===targetIndex) return;
+  const item=demandas.splice(dragIndex,1)[0];
+  demandas.splice(targetIndex,0,item);
+  demandas.forEach((d,i)=>d.id=i+1);
+  render();
+  try{
+    await api('/api/reorder',{method:'POST',body:JSON.stringify({ids:demandas.map(d=>d.uid || d.id),user:currentUser})});
+    await loadDemandas(); toastMsg('Prioridade atualizada para todos.');
+  }catch(err){ await loadDemandas(); toastMsg(err.message); }
+}
+function dragEnd(e){ e.currentTarget.classList.remove('dragging'); dragIndex=null; }
+function exportarCSV(){
+  const header=['Id Prioridade','Cliente','Data','Melhoria','Observação','Responsável','Prazo','Status'];
+  const rows=filtered().map(d=>[d.id,d.cliente||'Geral',fmtDate(d.data),d.melhoria,d.observacao,d.responsavel,fmtDate(d.prazo),d.status]);
+  const csv=[header,...rows].map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(';')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='esteira_demandas.csv'; a.click(); URL.revokeObjectURL(url);
+}
+function toastMsg(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function escapeHtml(v){ return String(v||'').replace(/[&<>'"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 
-      <input type="hidden" id="previous_asr" value="" />
-
-      <div id="fraseologiaBox" class="conditional-box">
-        <label>Frase atual do bot</label>
-        <textarea id="frase_atual" rows="3" placeholder="Opcional para demandas de fraseologia"></textarea>
-
-        <label>Sugestão de fraseologia / ajuste</label>
-        <textarea id="sugestao" rows="3" placeholder="Opcional para demandas de fraseologia"></textarea>
-      </div>
-
-      <div id="melhoriaBox" class="conditional-box">
-        <label>Melhoria</label>
-        <textarea id="melhoria" rows="3" placeholder="Descreva objetivamente a melhoria solicitada"></textarea>
-
-        <label>Observação</label>
-        <textarea id="obs" rows="3" placeholder="Inclua contexto, regra, justificativa ou detalhe para o desenvolvimento"></textarea>
-      </div>
-
-      <input type="hidden" id="impacto" value="3" />
-      <input type="hidden" id="recorrencia" value="3" />
-      <input type="hidden" id="urgencia" value="3" />
-      <input type="hidden" id="esforco" value="2" />
-      <input type="hidden" id="risco" value="3" />
-
-      <div class="modal-actions">
-        <button type="button" class="ghost" onclick="fecharModal()">Cancelar</button>
-        <button class="primary" type="submit">Salvar demanda</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script src="/static/js/app.js"></script>
+function initInteractiveBackground(){
+  const bg=document.getElementById('animatedBg');
+  const canvas=document.getElementById('networkCanvas');
+  const ctx=canvas.getContext('2d');
+  const mouse={x:window.innerWidth/2,y:window.innerHeight/2,active:false};
+  let points=[];
+  function resize(){
+    canvas.width=window.innerWidth*devicePixelRatio;
+    canvas.height=window.innerHeight*devicePixelRatio;
+    canvas.style.width=window.innerWidth+'px';
+    canvas.style.height=window.innerHeight+'px';
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    const total=Math.min(95,Math.max(48,Math.floor(window.innerWidth/18)));
+    points=Array.from({length:total},()=>({x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,vx:(Math.random()-.5)*.34,vy:(Math.random()-.5)*.34,r:Math.random()*1.8+1}));
+  }
+  function movePointer(x,y){
+    mouse.x=x; mouse.y=y; mouse.active=true;
+    bg.style.setProperty('--mx',x+'px'); bg.style.setProperty('--my',y+'px'); document.documentElement.style.setProperty('--mx',x+'px'); document.documentElement.style.setProperty('--my',y+'px');
+  }
+  window.addEventListener('resize',resize);
+  window.addEventListener('mousemove',e=>movePointer(e.clientX,e.clientY));
+  window.addEventListener('touchmove',e=>{ if(e.touches[0]) movePointer(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
+  window.addEventListener('mouseleave',()=>mouse.active=false);
+  function draw(){
+    ctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+    for(const p of points){
+      const dx=p.x-mouse.x, dy=p.y-mouse.y, dist=Math.hypot(dx,dy);
+      if(dist<145){ p.x += dx/dist*.20 || 0; p.y += dy/dist*.20 || 0; }
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0||p.x>window.innerWidth) p.vx*=-1;
+      if(p.y<0||p.y>window.innerHeight) p.vy*=-1;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle='rgba(143,210,255,.42)'; ctx.fill();
+    }
+    for(let i=0;i<points.length;i++){
+      for(let j=i+1;j<points.length;j++){
+        const a=points[i], b=points[j], d=Math.hypot(a.x-b.x,a.y-b.y);
+        if(d<118){ ctx.strokeStyle=`rgba(0,157,255,${(1-d/118)*.16})`; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+      }
+      const p=points[i], md=Math.hypot(p.x-mouse.x,p.y-mouse.y);
+      if(md<190){ ctx.strokeStyle=`rgba(255,107,0,${(1-md/190)*.22})`; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(mouse.x,mouse.y); ctx.stroke(); }
+    }
+    requestAnimationFrame(draw);
+  }
+  resize(); draw();
+}
+initInteractiveBackground();
+applyAuth();
+</script>
 </body>
 </html>
