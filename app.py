@@ -32,7 +32,7 @@ USERS = {
     "marcelo": "olos123",
     "hilde": "olos123",
     "antonio": "olos123",
-    "aleff.jesus@olos.com.br": "olos123",
+    "aleff.jesus": "olos123",
 }
 DELETE_ALLOWED = {"admin", "gerber"}
 ALLOWED_STATUS = {"Em Andamento", "Concluído", "Pendentes", "Paralisado"}
