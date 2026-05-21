@@ -138,7 +138,7 @@ th:nth-child(1),td:nth-child(1){width:42px;text-align:center}th:nth-child(2),td:
 <div class="modal" id="modal">
   <div class="modal-card">
     <div class="modal-head"><h2 id="modalTitle">Nova demanda</h2><button onclick="fecharModal()">Fechar</button></div>
-    <input type="hidden" id="editId">
+    <input type="hidden" id="editId"><input type="hidden" id="editUid">
     <div class="form-grid">
       <div><label>Cliente</label><input id="cliente" list="clientesList" placeholder="Ex: Sky, Energisa, Verisure"></div>
       <div><label>Data da inclusão</label><input id="data" type="date"></div>
@@ -169,6 +169,7 @@ const DELETE_ALLOWED = ["admin","gerber"];
 let currentUser = localStorage.getItem('esteira_current_user') || '';
 let demandas = [];
 let dragIndex = null;
+let lastServerSync = null;
 
 function normalizeUser(v){ return String(v||'').trim().toLowerCase(); }
 function canDelete(){ return DELETE_ALLOWED.includes(normalizeUser(currentUser)); }
@@ -178,6 +179,7 @@ function loginKey(e){ if(e.key==='Enter') login(); }
 async function api(url, options={}){
   const res = await fetch(url, {
     headers:{'Content-Type':'application/json'},
+    cache:'no-store',
     ...options
   });
   const txt = await res.text();
@@ -191,6 +193,7 @@ async function loadDemandas(){
   try{
     const data = await api('/api/demandas');
     demandas = data.demandas || [];
+    lastServerSync = new Date();
     render();
   }catch(err){
     toastMsg('Não consegui carregar as demandas do servidor.');
@@ -306,24 +309,24 @@ function render(){
 function setStatus(s){ document.getElementById('fStatus').value=s; render(); }
 function limparFiltros(){ busca.value=''; fCliente.value='Todos'; fStatus.value='Todos'; fResponsavel.value=''; render(); }
 function abrirModal(){
-  editId.value=''; modalTitle.textContent='Nova demanda'; cliente.value=(fCliente.value && fCliente.value!=='Todos') ? fCliente.value : ''; data.value=today(); prazo.value=''; melhoria.value=''; observacao.value=''; responsavel.value=currentUser ? currentUser.charAt(0).toUpperCase()+currentUser.slice(1) : ''; status.value='Em Andamento'; modal.classList.add('open');
+  editId.value=''; editUid.value=''; modalTitle.textContent='Nova demanda'; cliente.value=(fCliente.value && fCliente.value!=='Todos') ? fCliente.value : ''; data.value=today(); prazo.value=''; melhoria.value=''; observacao.value=''; responsavel.value=currentUser ? currentUser.charAt(0).toUpperCase()+currentUser.slice(1) : ''; status.value='Em Andamento'; modal.classList.add('open');
 }
 function fecharModal(){ modal.classList.remove('open'); }
 async function salvarDemanda(){
   if(!melhoria.value.trim() || !responsavel.value.trim()){ toastMsg('Preencha pelo menos Melhoria e Responsável.'); return; }
   const payload={cliente:cliente.value.trim()||'Geral',data:data.value||today(),melhoria:melhoria.value.trim(),observacao:observacao.value.trim(),responsavel:responsavel.value.trim(),prazo:prazo.value,status:status.value,user:currentUser};
   try{
-    if(editId.value){ await api(`/api/demandas/${editId.value}`,{method:'PUT',body:JSON.stringify(payload)}); }
+    if(editUid.value){ await api(`/api/demandas/${editUid.value}`,{method:'PUT',body:JSON.stringify(payload)}); }
     else { await api('/api/demandas',{method:'POST',body:JSON.stringify(payload)}); }
-    fecharModal(); await loadDemandas(); toastMsg('Demanda salva e publicada para todos.');
+    fecharModal(); await loadDemandas(); toastMsg('Demanda salva no servidor e publicada para todos.');
   }catch(err){ toastMsg(err.message); }
 }
-function editar(id){ const d=demandas.find(x=>x.id===id); if(!d) return; editId.value=d.id; modalTitle.textContent=`Editar demanda #${d.id}`; cliente.value=d.cliente||'Geral'; data.value=d.data; prazo.value=d.prazo; melhoria.value=d.melhoria; observacao.value=d.observacao; responsavel.value=d.responsavel; status.value=d.status; modal.classList.add('open'); }
+function editar(id){ const d=demandas.find(x=>x.id===id); if(!d) return; editId.value=d.id; editUid.value=d.uid || ''; modalTitle.textContent=`Editar demanda #${d.id}`; cliente.value=d.cliente||'Geral'; data.value=d.data; prazo.value=d.prazo; melhoria.value=d.melhoria; observacao.value=d.observacao; responsavel.value=d.responsavel; status.value=d.status; modal.classList.add('open'); }
 async function excluir(id){
   if(!canDelete()){ toastMsg('Exclusão liberada apenas para Admin e Gerber.'); return; }
   if(!confirm('Excluir esta demanda?')) return;
   try{
-    await api(`/api/demandas/${id}`,{method:'DELETE',body:JSON.stringify({user:currentUser})});
+    const d=demandas.find(x=>x.id===id); if(!d) return; await api(`/api/demandas/${d.uid || id}`,{method:'DELETE',body:JSON.stringify({user:currentUser})});
     await loadDemandas(); toastMsg('Demanda excluída e prioridades recalculadas.');
   }catch(err){ toastMsg(err.message); }
 }
@@ -397,6 +400,7 @@ function initInteractiveBackground(){
   resize(); draw();
 }
 initInteractiveBackground();
+window.addEventListener('focus',()=>{ if(currentUser) loadDemandas(); });
 applyAuth();
 </script>
 </body>

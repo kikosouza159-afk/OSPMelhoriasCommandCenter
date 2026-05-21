@@ -54,3 +54,25 @@ Start command:
 ```bash
 gunicorn app:app
 ```
+
+
+## Correção de persistência aplicada
+
+Esta versão não usa `localStorage` para salvar demandas. O navegador guarda apenas o usuário logado.
+Todas as demandas são lidas e gravadas no arquivo único do servidor:
+
+```text
+data/demandas.json
+```
+
+Também foi aplicado `cache: no-store` no front-end e cabeçalhos `no-cache` no Flask, para evitar que a página recarregue dados antigos após salvar.
+
+### Importante no Render
+
+Se o serviço reiniciar ou se você fizer novo deploy, o disco padrão do Render pode voltar para os arquivos do repositório. Para manter as demandas mesmo após reinício/deploy, crie um **Persistent Disk** no Render e configure a variável de ambiente abaixo apontando para esse disco:
+
+```text
+DATA_FILE=/var/data/demandas.json
+```
+
+Sem persistent disk, as demandas ficam salvas entre atualizações da página, mas podem ser perdidas em redeploy/restart do serviço.

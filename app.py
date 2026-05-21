@@ -13,8 +13,15 @@ app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-DATA_FILE = DATA_DIR / "demandas.json"
+DATA_FILE = Path(os.environ.get("DATA_FILE", DATA_DIR / "demandas.json"))
 LOCK = threading.Lock()
+
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 USERS = {
     "admin": "olos123",
@@ -89,21 +96,38 @@ def ensure_data_file() -> None:
 
 def load_raw() -> list[dict[str, Any]]:
     ensure_data_file()
-    with DATA_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with DATA_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        data = []
     if not isinstance(data, list):
-        return []
+        data = []
+    changed = False
     for item in data:
-        item.setdefault("uid", uuid.uuid4().hex)
-        item.setdefault("cliente", "Geral")
+        if "uid" not in item or not item.get("uid"):
+            item["uid"] = uuid.uuid4().hex
+            changed = True
+        if "cliente" not in item or not item.get("cliente"):
+            item["cliente"] = "Geral"
+            changed = True
+    if changed:
+        save_raw(data)
     return data
 
 
 def save_raw(rows: list[dict[str, Any]]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if DATA_FILE.exists():
+        try:
+            DATA_FILE.with_suffix(".bak.json").write_text(DATA_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception:
+            pass
     tmp = DATA_FILE.with_suffix(".tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, DATA_FILE)
 
 
@@ -135,6 +159,14 @@ def current_user(payload: dict[str, Any]) -> str:
     return str(payload.get("user") or "").strip().lower()
 
 
+def find_index_by_uid(rows: list[dict[str, Any]], uid: str) -> int:
+    uid = str(uid or "").strip()
+    for idx, row in enumerate(rows):
+        if str(row.get("uid")) == uid:
+            return idx
+    return -1
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -160,15 +192,17 @@ def criar_demanda():
         return jsonify({"ok": True, "demandas": with_priority(rows)})
 
 
-@app.put("/api/demandas/<int:priority_id>")
-def editar_demanda(priority_id: int):
+@app.put("/api/demandas/<uid>")
+def editar_demanda(uid: str):
     payload = request.get_json(silent=True) or {}
     clean = clean_payload(payload)
     if not clean["melhoria"] or not clean["responsavel"]:
         return jsonify({"error": "Preencha pelo menos Melhoria e Responsável."}), 400
     with LOCK:
         rows = load_raw()
-        idx = priority_id - 1
+        idx = find_index_by_uid(rows, uid)
+        if idx < 0 and uid.isdigit():
+            idx = int(uid) - 1
         if idx < 0 or idx >= len(rows):
             return jsonify({"error": "Demanda não encontrada."}), 404
         rows[idx].update(clean)
@@ -176,15 +210,17 @@ def editar_demanda(priority_id: int):
         return jsonify({"ok": True, "demandas": with_priority(rows)})
 
 
-@app.delete("/api/demandas/<int:priority_id>")
-def excluir_demanda(priority_id: int):
+@app.delete("/api/demandas/<uid>")
+def excluir_demanda(uid: str):
     payload = request.get_json(silent=True) or {}
     user = current_user(payload)
     if user not in DELETE_ALLOWED:
         return jsonify({"error": "Exclusão liberada apenas para Admin e Gerber."}), 403
     with LOCK:
         rows = load_raw()
-        idx = priority_id - 1
+        idx = find_index_by_uid(rows, uid)
+        if idx < 0 and uid.isdigit():
+            idx = int(uid) - 1
         if idx < 0 or idx >= len(rows):
             return jsonify({"error": "Demanda não encontrada."}), 404
         rows.pop(idx)
