@@ -25,6 +25,7 @@ DATA_FILE = Path(os.environ.get("DATA_FILE", DATA_DIR / "demandas.json"))
 # Render/Postgres: configure a variável DATABASE_URL no Web Service.
 # Exemplo: DATABASE_URL=postgresql://usuario:senha@host:5432/banco
 DATABASE_URL = os.getenv("DATABASE_URL")
+FORCE_POSTGRES = os.getenv("FORCE_POSTGRES", "1").strip() != "0"
 USE_POSTGRES = bool(DATABASE_URL)
 
 LOCK = threading.Lock()
@@ -120,6 +121,13 @@ def ensure_data_file() -> None:
     if USE_POSTGRES:
         init_db()
         return
+
+    # Segurança para produção no Render:
+    # se DATABASE_URL não estiver configurada, NÃO volta para JSON antigo nem dados mockados.
+    # Isso evita o efeito "voltou tudo" após sleep/redeploy do Render.
+    if FORCE_POSTGRES:
+        return
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not DATA_FILE.exists():
         rows = [{"uid": uuid.uuid4().hex, **item} for item in DEFAULT_DEMANDAS]
@@ -141,6 +149,9 @@ def load_raw() -> list[dict[str, Any]]:
                 )
                 rows = [dict(row) for row in cur.fetchall()]
         return normalize_rows(rows, persist=False)
+
+    if FORCE_POSTGRES:
+        return []
 
     try:
         with DATA_FILE.open("r", encoding="utf-8") as f:
@@ -206,6 +217,10 @@ def save_raw(rows: list[dict[str, Any]]) -> None:
                         ),
                     )
             conn.commit()
+        return
+
+    if FORCE_POSTGRES:
+        # Em produção, não gravar fallback local. O painel deve usar DATABASE_URL.
         return
 
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -275,13 +290,19 @@ def index():
         users=USERS,
         delete_allowed=sorted(DELETE_ALLOWED),
         users_text=users_text(),
-        storage_mode="Postgres" if USE_POSTGRES else "JSON local",
+        storage_mode="Postgres" if USE_POSTGRES else "DATABASE_URL ausente",
     )
 
 
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "storage": "postgres" if USE_POSTGRES else "json"})
+    return jsonify({
+        "ok": True,
+        "storage": "postgres" if USE_POSTGRES else "sem_database_url",
+        "database_url_configurada": bool(DATABASE_URL),
+        "force_postgres": FORCE_POSTGRES,
+        "aviso": "DATABASE_URL ausente. O painel não vai usar JSON local." if not USE_POSTGRES else "Postgres ativo."
+    })
 
 
 @app.get("/api/demandas")
