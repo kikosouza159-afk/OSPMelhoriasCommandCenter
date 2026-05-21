@@ -126,53 +126,7 @@ def get_delete_allowed() -> set[str]:
 ALLOWED_STATUS = {"Em Andamento", "Concluído", "Pendentes", "Paralisado"}
 STATUS_ALIASES = {"Pendente": "Pendentes", "pendente": "Pendentes", "PENDENTE": "Pendentes"}
 
-DEFAULT_DEMANDAS = [
-    {
-        "cliente": "Sky",
-        "data": "2026-05-20",
-        "melhoria": "Retirar pergunta de nova data após negativa",
-        "observacao": "Cliente informou que só consegue pagar dia 20. Bot não deve perguntar nova data fora da regra.",
-        "responsavel": "Hildebrando",
-        "prazo": "2026-05-22",
-        "status": "Em Andamento",
-    },
-    {
-        "cliente": "Sky",
-        "data": "2026-05-20",
-        "melhoria": "Corrigir fluxo de terceiro desconhecido",
-        "observacao": "Quando a pessoa informar que não conhece o cliente, o fluxo deve validar telefone incorreto ou solicitar outro contato.",
-        "responsavel": "Elvis",
-        "prazo": "2026-05-23",
-        "status": "Pendentes",
-    },
-    {
-        "cliente": "Energisa",
-        "data": "2026-05-21",
-        "melhoria": "Normalizar nomes antes da vocalização",
-        "observacao": "Padronizar nomes com acentuação e pronúncia para melhorar naturalidade e assertividade do atendimento.",
-        "responsavel": "Hildebrando",
-        "prazo": "2026-05-27",
-        "status": "Em Andamento",
-    },
-    {
-        "cliente": "Energisa",
-        "data": "2026-05-21",
-        "melhoria": "Revisar regra de encerramento por WhatsApp",
-        "observacao": "Criar frase de encerramento com orientação objetiva para continuidade do atendimento via WhatsApp.",
-        "responsavel": "Gerber",
-        "prazo": "2026-05-29",
-        "status": "Paralisado",
-    },
-    {
-        "cliente": "Energisa",
-        "data": "2026-05-22",
-        "melhoria": "Homologar frase padrão de encerramento",
-        "observacao": "Aplicar comunicação final: A Energisa agradece. Tenha um bom dia.",
-        "responsavel": "Michele",
-        "prazo": "2026-05-30",
-        "status": "Concluído",
-    },
-]
+DEFAULT_DEMANDAS = []
 
 
 def ensure_data_file() -> None:
