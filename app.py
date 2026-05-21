@@ -35,6 +35,7 @@ USERS = {
 }
 DELETE_ALLOWED = {"admin", "gerber"}
 ALLOWED_STATUS = {"Em Andamento", "Concluído", "Pendentes", "Paralisado"}
+STATUS_ALIASES = {"Pendente": "Pendentes", "pendente": "Pendentes", "PENDENTE": "Pendentes"}
 
 DEFAULT_DEMANDAS = [
     {
@@ -142,6 +143,7 @@ def with_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
     status = str(payload.get("status") or "Em Andamento").strip()
+    status = STATUS_ALIASES.get(status, status)
     if status not in ALLOWED_STATUS:
         status = "Em Andamento"
     return {

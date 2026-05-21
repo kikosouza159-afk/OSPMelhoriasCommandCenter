@@ -146,7 +146,7 @@ th:nth-child(1),td:nth-child(1){width:42px;text-align:center}th:nth-child(2),td:
       <div class="wide"><label>Melhoria</label><input id="melhoria" placeholder="Título resumido da demanda"></div>
       <div class="wide"><label>Observação</label><textarea id="observacao" placeholder="Detalhe o contexto, regra ou evidência da melhoria"></textarea></div>
       <div><label>Responsável</label><input id="responsavel" placeholder="Autor responsável"></div>
-      <div><label>Status</label><select id="status"><option>Em Andamento</option><option>Concluído</option><option>Pendentes</option><option>Paralisado</option></select></div>
+      <div><label>Status</label><select id="campoStatus"><option>Em Andamento</option><option>Concluído</option><option>Pendentes</option><option>Paralisado</option></select></div>
     </div>
     <div class="modal-foot"><button onclick="fecharModal()">Cancelar</button><button class="primary" onclick="salvarDemanda()">Salvar</button></div>
   </div>
@@ -232,6 +232,7 @@ function applyAuth(){
 function fmtDate(v){ if(!v) return ''; const [y,m,d]=v.split('-'); return `${d}/${m}/${y}`; }
 function today(){ return new Date().toISOString().slice(0,10); }
 function statusClass(s){ return {'Em Andamento':'s-andamento','Concluído':'s-concluido','Pendentes':'s-pendente','Paralisado':'s-paralisado'}[s] || ''; }
+function normalizarStatus(s){ return (s==='Pendente' || s==='pendente' || s==='PENDENTE') ? 'Pendentes' : (s || 'Em Andamento'); }
 function prazoClass(prazo,status){ if(status==='Concluído' || !prazo) return ''; const p = new Date(prazo+'T00:00:00'); const now = new Date(); now.setHours(0,0,0,0); const diff=(p-now)/86400000; if(diff<0) return 'overdue'; if(diff<=2) return 'soon'; return ''; }
 function filtered(){
   const b=document.getElementById('busca').value.toLowerCase().trim();
@@ -239,7 +240,7 @@ function filtered(){
   const fc=document.getElementById('fCliente').value;
   const fr=document.getElementById('fResponsavel').value.toLowerCase().trim();
   return demandas.filter(d =>
-    (fs==='Todos' || d.status===fs) &&
+    (fs==='Todos' || normalizarStatus(d.status)===fs) &&
     (fc==='Todos' || (d.cliente||'Geral')===fc) &&
     (!fr || String(d.responsavel||'').toLowerCase().includes(fr)) &&
     (!b || [d.cliente,d.melhoria,d.observacao,d.responsavel,d.status].join(' ').toLowerCase().includes(b))
@@ -277,10 +278,10 @@ function renderKpis(){
   refreshClienteOptions();
   const base=baseFilteredSemStatus();
   kTotal.textContent=base.length;
-  kAndamento.textContent=base.filter(d=>d.status==='Em Andamento').length;
-  kConcluido.textContent=base.filter(d=>d.status==='Concluído').length;
-  kPendente.textContent=base.filter(d=>d.status==='Pendentes').length;
-  kParalisado.textContent=base.filter(d=>d.status==='Paralisado').length;
+  kAndamento.textContent=base.filter(d=>normalizarStatus(d.status)==='Em Andamento').length;
+  kConcluido.textContent=base.filter(d=>normalizarStatus(d.status)==='Concluído').length;
+  kPendente.textContent=base.filter(d=>normalizarStatus(d.status)==='Pendentes').length;
+  kParalisado.textContent=base.filter(d=>normalizarStatus(d.status)==='Paralisado').length;
   const fs=document.getElementById('fStatus')?.value || 'Todos';
   document.querySelectorAll('[data-status-card]').forEach(card=>{
     card.classList.toggle('active', card.dataset.statusCard===fs);
@@ -292,7 +293,7 @@ function render(){
   if(!data.length){ tbody.innerHTML=`<tr><td colspan="10" class="empty">Nenhuma demanda encontrada para os filtros aplicados.</td></tr>`; return; }
   tbody.innerHTML=data.map(d=>{
     const globalIndex=demandas.findIndex(x=>x.id===d.id);
-    return `<tr class="${d.status==='Concluído'?'row-concluido':''}" draggable="true" ondragstart="dragStart(event,${globalIndex})" ondragover="dragOver(event)" ondrop="dropRow(event,${globalIndex})" ondragend="dragEnd(event)">
+    return `<tr class="${normalizarStatus(d.status)==='Concluído'?'row-concluido':''}" draggable="true" ondragstart="dragStart(event,${globalIndex})" ondragover="dragOver(event)" ondrop="dropRow(event,${globalIndex})" ondragend="dragEnd(event)">
       <td class="drag">⋮⋮</td>
       <td><span class="pid">${d.id}</span></td>
       <td><span class="client-chip">${escapeHtml(d.cliente||'Geral')}</span></td>
@@ -300,8 +301,8 @@ function render(){
       <td class="title-cell">${escapeHtml(d.melhoria)}</td>
       <td><div class="obs">${escapeHtml(d.observacao)}</div></td>
       <td>${escapeHtml(d.responsavel)}</td>
-      <td class="${prazoClass(d.prazo,d.status)}">${fmtDate(d.prazo)}</td>
-      <td><span class="badge ${statusClass(d.status)}">${d.status}</span></td>
+      <td class="${prazoClass(d.prazo,normalizarStatus(d.status))}">${fmtDate(d.prazo)}</td>
+      <td><span class="badge ${statusClass(normalizarStatus(d.status))}">${normalizarStatus(d.status)}</span></td>
       <td><div class="row-actions"><button class="mini" onclick="editar(${d.id})">Editar</button>${canDelete()?`<button class="mini danger" onclick="excluir(${d.id})">Excluir</button>`:''}</div></td>
     </tr>`;
   }).join('');
@@ -309,19 +310,19 @@ function render(){
 function setStatus(s){ document.getElementById('fStatus').value=s; render(); }
 function limparFiltros(){ busca.value=''; fCliente.value='Todos'; fStatus.value='Todos'; fResponsavel.value=''; render(); }
 function abrirModal(){
-  editId.value=''; editUid.value=''; modalTitle.textContent='Nova demanda'; cliente.value=(fCliente.value && fCliente.value!=='Todos') ? fCliente.value : ''; data.value=today(); prazo.value=''; melhoria.value=''; observacao.value=''; responsavel.value=currentUser ? currentUser.charAt(0).toUpperCase()+currentUser.slice(1) : ''; status.value='Em Andamento'; modal.classList.add('open');
+  editId.value=''; editUid.value=''; modalTitle.textContent='Nova demanda'; cliente.value=(fCliente.value && fCliente.value!=='Todos') ? fCliente.value : ''; data.value=today(); prazo.value=''; melhoria.value=''; observacao.value=''; responsavel.value=currentUser ? currentUser.charAt(0).toUpperCase()+currentUser.slice(1) : ''; campoStatus.value='Em Andamento'; modal.classList.add('open');
 }
 function fecharModal(){ modal.classList.remove('open'); }
 async function salvarDemanda(){
   if(!melhoria.value.trim() || !responsavel.value.trim()){ toastMsg('Preencha pelo menos Melhoria e Responsável.'); return; }
-  const payload={cliente:cliente.value.trim()||'Geral',data:data.value||today(),melhoria:melhoria.value.trim(),observacao:observacao.value.trim(),responsavel:responsavel.value.trim(),prazo:prazo.value,status:status.value,user:currentUser};
+  const payload={cliente:cliente.value.trim()||'Geral',data:data.value||today(),melhoria:melhoria.value.trim(),observacao:observacao.value.trim(),responsavel:responsavel.value.trim(),prazo:prazo.value,status:campoStatus.value,user:currentUser};
   try{
     if(editUid.value){ await api(`/api/demandas/${editUid.value}`,{method:'PUT',body:JSON.stringify(payload)}); }
     else { await api('/api/demandas',{method:'POST',body:JSON.stringify(payload)}); }
     fecharModal(); await loadDemandas(); toastMsg('Demanda salva no servidor e publicada para todos.');
   }catch(err){ toastMsg(err.message); }
 }
-function editar(id){ const d=demandas.find(x=>x.id===id); if(!d) return; editId.value=d.id; editUid.value=d.uid || ''; modalTitle.textContent=`Editar demanda #${d.id}`; cliente.value=d.cliente||'Geral'; data.value=d.data; prazo.value=d.prazo; melhoria.value=d.melhoria; observacao.value=d.observacao; responsavel.value=d.responsavel; status.value=d.status; modal.classList.add('open'); }
+function editar(id){ const d=demandas.find(x=>x.id===id); if(!d) return; editId.value=d.id; editUid.value=d.uid || ''; modalTitle.textContent=`Editar demanda #${d.id}`; cliente.value=d.cliente||'Geral'; data.value=d.data; prazo.value=d.prazo; melhoria.value=d.melhoria; observacao.value=d.observacao; responsavel.value=d.responsavel; campoStatus.value=normalizarStatus(d.status); modal.classList.add('open'); }
 async function excluir(id){
   if(!canDelete()){ toastMsg('Exclusão liberada apenas para Admin e Gerber.'); return; }
   if(!confirm('Excluir esta demanda?')) return;
