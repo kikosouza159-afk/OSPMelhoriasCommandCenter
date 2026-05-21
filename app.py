@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import uuid
+from html import escape
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -23,18 +25,104 @@ def add_no_cache_headers(response):
     response.headers["Expires"] = "0"
     return response
 
-USERS = {
-    "admin": "olos123",
-    "gerber": "olos123",
-    "elvis": "olos123",
-    "michele": "olos123",
-    "nubia": "olos123",
-    "marcelo": "olos123",
-    "hilde": "olos123",
-    "antonio": "olos123",
-    "aleff.jesus": "olos123",
-}
-DELETE_ALLOWED = {"admin", "gerber"}
+# ============================================================
+# CADASTRO DE USUÁRIOS
+# ============================================================
+# Para incluir um usuário novo, adicione apenas uma linha nessa lista.
+# Exemplo usuário comum:
+#     {"usuario": "aleff.jesus", "senha": "olos123", "pode_excluir": False},
+#
+# Exemplo usuário com permissão para excluir demandas:
+#     {"usuario": "coord.nome", "senha": "olos123", "pode_excluir": True},
+#
+# Depois é só salvar o app.py, fazer commit/push e redeploy no Render.
+
+USER_ACCESS = [
+    {"usuario": "admin", "senha": "olos123", "pode_excluir": True},
+    {"usuario": "gerber", "senha": "olos123", "pode_excluir": True},
+    {"usuario": "elvis", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "michele", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "nubia", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "marcelo", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "hilde", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "antonio", "senha": "olos123", "pode_excluir": False},
+    {"usuario": "aleff.jesus", "senha": "olos123", "pode_excluir": False},
+]
+
+
+def normalize_login(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def build_users() -> tuple[dict[str, str], set[str]]:
+    users: dict[str, str] = {}
+    delete_allowed: set[str] = set()
+
+    for item in USER_ACCESS:
+        usuario = normalize_login(item.get("usuario"))
+        senha = str(item.get("senha") or "").strip()
+        if not usuario or not senha:
+            continue
+        users[usuario] = senha
+        if bool(item.get("pode_excluir")):
+            delete_allowed.add(usuario)
+
+    # Opcional para Render: permite adicionar usuários sem mexer no código.
+    # Formato: EXTRA_USERS="usuario:senha,usuario2:senha:admin"
+    extra_users = os.environ.get("EXTRA_USERS", "").strip()
+    for raw in [x.strip() for x in extra_users.split(",") if x.strip()]:
+        parts = [p.strip() for p in raw.split(":")]
+        if len(parts) >= 2:
+            usuario = normalize_login(parts[0])
+            senha = parts[1]
+            perfil = normalize_login(parts[2]) if len(parts) >= 3 else ""
+            if usuario and senha:
+                users[usuario] = senha
+                if perfil in {"admin", "delete", "excluir", "true", "1"}:
+                    delete_allowed.add(usuario)
+
+    return users, delete_allowed
+
+
+def users_footer_text() -> str:
+    users, _ = build_users()
+    nomes = list(users.keys())
+    if not nomes:
+        return "Nenhum usuário cadastrado"
+    if len(nomes) == 1:
+        return f"Usuário liberado: {nomes[0]}"
+    return "Usuários liberados: " + ", ".join(nomes[:-1]) + " e " + nomes[-1]
+
+
+def inject_frontend_auth_config(html: str) -> str:
+    users, delete_allowed = build_users()
+    users_js = json.dumps(users, ensure_ascii=False, indent=2)
+    delete_js = json.dumps(sorted(delete_allowed), ensure_ascii=False)
+
+    html = re.sub(
+        r"const\s+USERS\s*=\s*\{.*?\};",
+        f"const USERS = {users_js};",
+        html,
+        flags=re.S,
+    )
+    html = re.sub(
+        r"const\s+DELETE_ALLOWED\s*=\s*\[.*?\];",
+        f"const DELETE_ALLOWED = {delete_js};",
+        html,
+        flags=re.S,
+    )
+    html = re.sub(
+        r'<div class="login-foot">.*?</div>',
+        f'<div class="login-foot">{escape(users_footer_text())}.</div>',
+        html,
+        flags=re.S,
+    )
+    return html
+
+
+def get_delete_allowed() -> set[str]:
+    _, delete_allowed = build_users()
+    return delete_allowed
 ALLOWED_STATUS = {"Em Andamento", "Concluído", "Pendentes", "Paralisado"}
 STATUS_ALIASES = {"Pendente": "Pendentes", "pendente": "Pendentes", "PENDENTE": "Pendentes"}
 
@@ -172,7 +260,9 @@ def find_index_by_uid(rows: list[dict[str, Any]], uid: str) -> int:
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    template_path = BASE_DIR / "templates" / "index.html"
+    html = template_path.read_text(encoding="utf-8")
+    return inject_frontend_auth_config(html)
 
 
 @app.get("/api/demandas")
@@ -217,8 +307,8 @@ def editar_demanda(uid: str):
 def excluir_demanda(uid: str):
     payload = request.get_json(silent=True) or {}
     user = current_user(payload)
-    if user not in DELETE_ALLOWED:
-        return jsonify({"error": "Exclusão liberada apenas para Admin e Gerber."}), 403
+    if user not in get_delete_allowed():
+        return jsonify({"error": "Exclusão liberada apenas para usuários com permissão de exclusão."}), 403
     with LOCK:
         rows = load_raw()
         idx = find_index_by_uid(rows, uid)
